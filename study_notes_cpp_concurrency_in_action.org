@@ -1,0 +1,179 @@
+#+OPTIONS: ^:nil
+#+SEQ_TODO: TODO(t!) | DONE(d@/!)
+
+* <2019-03-11 周一> 《C++并发编程实战》读书笔记（一）
+  1) [[https://github.com/xiaoweiChen/Cpp_Concurrency_In_Action][github的翻译项目]]
+  2) [[https://chenxiaowei.gitbooks.io/cpp_concurrency_in_action/][gitbook在线阅读]]
+  3) [[https://github.com/bsmr-c-cpp/Cpp-Concurrency-in-Action][书中源码]]
+  4) [[https://www.bogotobogo.com/cplusplus/C11/][学习C++11/14]]
+** 第1章 你好，C++的并发世界
+   + 这章内容看得很累，感觉翻译得不是太好，书中有下面这段代码
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+void hello()
+{
+  std::cout << "Hello Concurrent World!\n";
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t(hello);
+  t.join();
+
+  return 0;
+}
+#+END_SRC
+   + 链接出错，如下
+#+BEGIN_SRC 
+% g++ 01_01.cpp
+/usr/bin/ld: /tmp/ccWuVkAr.o: in function `std::thread::thread<void (&)(), , void>(void (&)())':
+01_01.cpp:(.text._ZNSt6threadC2IRFvvEJEvEEOT_DpOT0_[_ZNSt6threadC5IRFvvEJEvEEOT_DpOT0_]+0x2f): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+#+END_SRC
+   + 为什么“std::thread”需要去链接“pthread_create”呢？标准库的东西还得依赖平台支持吗？
+   + 即使使用“g++ -std=c++11 01_01.cpp”进行编译也同样出错
+#+BEGIN_SRC 
+% g++ -std=c++11 01_01.cpp
+/usr/bin/ld: /tmp/cchBMGkl.o: in function `std::thread::thread<void (&)(), , void>(void (&)())':
+01_01.cpp:(.text._ZNSt6threadC2IRFvvEJEvEEOT_DpOT0_[_ZNSt6threadC5IRFvvEJEvEEOT_DpOT0_]+0x2f): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+#+END_SRC
+   + *使用下面的命令可以编译通过，必须要加上“-pthread”参数*
+#+BEGIN_SRC 
+% g++ 01_01.cpp -pthread
+#+END_SRC
+   + 查看“g++”的手册页中关于“-pthread”的解释
+#+BEGIN_SRC 
+-pthread 
+    Add support for multithreading using the POSIX threads library. This option sets flags for both the
+    preprocessor and linker. It does not affect the thread safety of object code produced by the compiler
+    or that of libraries supplied with it. These are HP-UX specific flags.
+#+END_SRC
+   + 上面表示要使用“POSIX threads library”，查看“pthread_create”的手册页也可以看到
+#+BEGIN_SRC 
+SYNOPSIS
+       #include <pthread.h>
+
+       int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                          void *(*start_routine) (void *), void *arg);
+
+       Compile and link with -pthread.
+#+END_SRC
+   + *问题：“std::thread”在linux平台下必须使用“-pthread”才能正常编译成功吗？*
+   + 我的环境是
+#+BEGIN_SRC 
+gcc version 8.2.1 20181127 (GCC)
+4.20.12-arch1-1-ARCH
+#+END_SRC
+** 第2章 线程管理（一）
+*** 启动线程
+    + 这里有坑，往下看，首先这里可以正确执行线程函数
+    + 下面的代码可以正确输出（函数对象）
+      - 这里为什么能正确执行，居然能显示出“operator()”的输出结果，我有点不太理解
+      - 书中解释“background_task”是一个“函数对象”，新名词对我来说
+      - 看“background_task”的实现，是不是类中带有“operator()()”的对象不是函数对象呢？
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+class background_task
+{
+public:
+  void operator()() const
+  {
+    std::cout << "operator()" << std::endl;
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  background_task f;
+
+  // output: operator()
+  std::thread my_thread(f);
+  my_thread.join();
+
+  return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+// output
+operator()
+#+END_SRC
+    + 下面的代码编译出错
+      - *如果你传递了一个临时变量，而不是一个命名变量，C++编译器会将其解析为函数声明，而不是对象定义*
+      - 通过下面的编译出错信息确实可以看到是这样子的
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+class background_task
+{
+public:
+  void operator()() const
+  {
+    std::cout << "operator()" << std::endl;
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  // output nothing
+  std::thread my_thread(background_task());
+  my_thread.join();
+
+  return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+% g++ 02_else_01.cpp -pthread
+02_else_01.cpp: In function ‘int main(int, char**)’:
+02_else_01.cpp:27:13: error: request for member ‘join’ in ‘my_thread’, which is of non-class type ‘std::thread(background_task (*)())’
+   my_thread.join();
+             ^~~~
+#+END_SRC
+    + 可以通过下面两种方法来解决上面的临时变量问题，将对象的定义改为下面二者之一即可
+#+BEGIN_SRC 
+// 使用多组括号
+std::thread my_thread((background_task()));
+
+// 使用新统一的初始化语法（即初始化列表方法），可以通过“std::initializer_list”实现
+std::thread my_thread{background_task()};
+#+END_SRC
+    + 完整测试代码如下
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+class background_task
+{
+public:
+  void operator()() const
+  {
+    std::cout << "operator()" << std::endl;
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  background_task f;
+
+  // output: operator()
+  // std::thread my_thread(f);
+
+  // output: nothing
+  // std::thread my_thread(background_task());
+
+  // output: operator()
+  // std::thread my_thread((background_task()));
+
+  // output: operator()
+  std::thread my_thread{background_task()};
+
+  my_thread.join();
+
+  return 0;
+}
+#+END_SRC
