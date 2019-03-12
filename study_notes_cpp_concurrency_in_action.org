@@ -367,3 +367,353 @@ int main(int argc, char *argv[])
     + “detach”的使用
       - 不能对没有执行线程的“std::thread”对象使用“detach”
       - 当“joinable”返回真时，就可以使用“detach”
+*** 向线程函数传递参数（一）
+    + 这翻译看得真是云里雾里，不过大概意思我懂了，传递参数无非就是传值、传指引和传引用嘛
+    + 先看传值，补全书中代码如下
+#+BEGIN_SRC 
+#include <iostream>
+#include <string>
+#include <thread>
+
+void f(int i, const std::string &s)
+{
+  std::cout << "i: " << i << std::endl;
+  std::cout << "s: " << s << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t(f, 3, "hello");
+  t.join();
+
+  return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+// output
+% ./a.out
+i: 3
+s: hello
+#+END_SRC
+    + 这里就像“[[ref_to_const_understand][关于函数参数中常量引用的再理解]]”说的一样，产生了临时对象
+    + 它将“const char*”转化为“std::string”
+    + *这里有个问题留着下次解决：上面的代码如果将“t.join();”注释掉程序运行崩溃，我想知道原因，输出如下*
+#+BEGIN_SRC 
+% ./a.out
+terminate called without an active exception
+[1]    6430 abort (core dumped)  ./a.out
+#+END_SRC
+    + 再看传指针，补全书中代码
+#+BEGIN_SRC 
+#include <iostream>
+#include <string>
+#include <thread>
+
+void f(int i, const std::string &s)
+{
+  std::cout << "i: " << i << std::endl;
+  std::cout << "s: " << s << std::endl;
+}
+
+void oops(int some_param)
+{
+  char buffer[1024];
+  sprintf(buffer, "%i", some_param);
+  std::thread t(f, 3, buffer);
+  t.join();
+}
+
+int main(int argc, char *argv[])
+{
+  oops(23);
+
+  return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+// output
+% ./a.out
+i: 3
+s: 23
+#+END_SRC
+    + 我将书中的代码的“detach”改为了“join”，不然我无法看到输出
+    + *这里书中说“函数有很大的可能会在字面值转化成‘std::string’对象之前崩溃”，不懂什么意思*
+    + 解决方案是传递到“std::string”构造函数之前将字面值转化为“std::string”对象
+    + 修改上面的代码
+#+BEGIN_SRC 
+#include <iostream>
+#include <string>
+#include <thread>
+
+void f(int i, const std::string &s)
+{
+  std::cout << "i: " << i << std::endl;
+  std::cout << "s: " << s << std::endl;
+}
+
+void oops(int some_param)
+{
+  char buffer[1024];
+  sprintf(buffer, "%i", some_param);
+  std::thread t(f, 3, buffer);
+  t.join();
+}
+
+void not_oops(int some_param)
+{
+  char buffer[1024];
+  sprintf(buffer, "%i", some_param);
+  std::thread t(f, 3, std::string(buffer));
+  t.join();
+}
+
+int main(int argc, char *argv[])
+{
+  oops(23);
+  not_oops(32);
+
+  return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+// output
+% ./a.out 
+i: 3
+s: 23
+i: 3
+s: 32
+#+END_SRC
+    + *这里也不懂什么意思，书中所言P30*
+      - 上面这种情况的问题是，想要依赖隐式转换将字面值转换为函数期待的“std::string”对象
+      - 但因“std::string”的构造函数会复制提供的变量，就只复制了没有转换成期望类型的字符串字面值
+    + 再看传引用，补全书中代码，不知道为啥，下面这段代码编译有问题，一堆错误，先贴上再说
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+typedef int widget_id;
+
+class widget_data
+{
+public:
+  widget_data() : id(0)
+  {
+    std::cout << "widget_data()" << std::endl;
+  }
+
+  ~widget_data()
+  {
+    std::cout << "~widget_data()" << std::endl;
+  }
+
+  widget_id get_id() const
+  {
+    return id;
+  }
+
+  void set_id(widget_id id)
+  {
+    this->id = id;
+  }
+
+private:
+  widget_id id;
+};
+
+void update_data_for_widget(widget_id w, widget_data &data)
+{
+  data.set_id(w);
+}
+
+void oops_again(widget_id w)
+{
+  widget_data data;
+  std::thread t(update_data_for_widget, w, data);
+  std::cout << "data.id: " << data.get_id() << std::endl;
+  t.join();
+}
+
+int main(int argc, char *argv[])
+{
+  oops_again(3);
+
+  return 0;
+}
+#+END_SRC
+** （<2016-11-21 周一>）理解临时对象的来源（《More Effective C++》条款19）<<20161121>>
+   + 仅当通过传值（by value）方式传递对象或传递常量引用（reference-to-const）参数时，才会发生这些类型转换
+   + 当传递一个非常量引用（reference-to-non-const）参数对象，就不会发生，如下：
+#+BEGIN_SRC c++
+#include "stdafx.h"
+#include <string>
+
+void uppercasify(std::string &str)
+{
+}
+
+int _tmain(int argc, _TCHAR* argv[])
+{
+	char subtleBookPlug[] = "Effective C++";
+
+	// error C2664: 'uppercasify' : cannot convert parameter 1 from 'char [14]' to 'std::string &'
+	uppercasify(subtleBookPlug);
+
+	return 0;
+}
+#+END_SRC
+   + 代码改成如下，果然编译通过
+#+BEGIN_SRC c++
+#include "stdafx.h"
+#include <string>
+
+void uppercasify(const std::string &str)
+{
+}
+
+int _tmain(int argc, _TCHAR* argv[])
+{
+	char subtleBookPlug[] = "Effective C++";
+
+	uppercasify(subtleBookPlug);
+
+	return 0;
+}
+#+END_SRC
+   + 表述如下：
+     - 假设建立一个临时对象，那么临时对象将被传递到upeercasify中，其会修改这个临时对象，把它的字符改成大写
+     - 但是对subtleBookPlug函数调用的真正参数没有任何影响，仅仅改变了临时从subtleBookPlug生成的string对象
+     - 无疑这不是程序员所希望的，程序员传递subtleBookPlug参数到uppercasify函数中，期望修改subtleBookPlug的值
+     - 当程序员期望修改非临时对象时，对非常量引用（references-to-non-const）进行的隐式类型转换却修改临时对象
+     - 这就是为什么C++语言禁止为非常量引用（reference-to-non-const）产生临时对象，这样非常量引用参数就不会遇到这种问题
+   + 临时对象是有开销的，所以你应该尽可能地去除它们，然而更重要的是训练自己寻找可能建立临时对象的地方
+     - *在任何时候只要见到常量引用（reference-to-const）参数，就存在建立临时对象而绑定在参数上的可能性*
+     - *在任何时候只要见到函数返回对象，就会有一个临时对象被建立（以后被释放）*
+   + 学会寻找这些对象构造，你就能显著地增强透过编译器表面动作而看到其背后开销的能力
+** 关于函数参数中常量引用的再理解<<ref_to_const_understand>>
+   + 因为之前写过，但是在不同的笔记文件中，所以我把笔记拷贝过来了
+   + 见：[[20161121][理解临时对象的来源（《More Effective C++》条款19）]]
+   + 有一段时间写代码一直使用常量引用，已经习惯了，但是其实常量引用会造成临时对象的生成导致影响效率
+   + 今天写个测试代码再理解一次
+#+BEGIN_SRC 
+#include <iostream>
+
+class class_string
+{
+public:
+	class_string() : data(nullptr), len(0)
+	{
+		std::cout << "class_string()" << std::endl;
+	}
+
+	class_string(const char *value)
+	{
+		std::cout << "class_string(const char *value)" << std::endl;
+		data = new char[strlen(value) + 1];
+		strcpy_s(data, strlen(value) + 1, value);
+	}
+
+	~class_string()
+	{
+		std::cout << "~class_string()" << std::endl;
+		if (data)
+		{
+			delete data;
+		}
+	}
+
+	void print_data()
+	{
+		std::cout << data << std::endl;
+	}
+
+private:
+	char *data;
+	size_t len;
+};
+
+void test_ref_to_const(const class_string &cs) // 1
+{}
+
+int main()
+{
+	char str[] = "hello";
+	class_string cs(str);
+
+	test_ref_to_const(str);
+
+	return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+// output
+class_string(const char *value)
+class_string(const char *value)
+~class_string()
+~class_string()
+#+END_SRC
+   + 代码理解如下
+     - 在“1”处使用的是常量引用，可以看到构造和析构被调用了两次
+       + 一次是“cs”建立对象
+       + 一次是调用“test_ref_to_const(str);”
+     - 当然如果直接使用“test_ref_to_const(cs);”，则构造和析构仅调用一次（这是我希望的）
+     - 注意到“class_string”的有参构造函数其实不安全的，因为存在隐式转换
+     - 正因为隐式转换的存在才让“test_ref_to_const(str);”有了建立临时对象的可能性
+   + 那么添上“explicit”后会怎么样呢？
+#+BEGIN_SRC 
+#include <iostream>
+
+class class_string
+{
+public:
+	class_string() : data(nullptr), len(0)
+	{
+		std::cout << "class_string()" << std::endl;
+	}
+
+	explicit class_string(const char *value)
+	{
+		std::cout << "class_string(const char *value)" << std::endl;
+		data = new char[strlen(value) + 1];
+		strcpy_s(data, strlen(value) + 1, value);
+	}
+
+	~class_string()
+	{
+		std::cout << "~class_string()" << std::endl;
+		if (data)
+		{
+			delete data;
+		}
+	}
+
+	void print_data()
+	{
+		std::cout << data << std::endl;
+	}
+
+private:
+	char *data;
+	size_t len;
+};
+
+void test_ref_to_const(const class_string &cs)
+{}
+
+int main()
+{
+	char str[] = "hello";
+	class_string cs(str);
+
+	test_ref_to_const(str);
+
+	return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+error C2664: 'void test_ref_to_const(const class_string &)':
+cannot convert argument 1 from 'char [6]' to 'const class_string &'
+#+END_SRC
+   + *果然编译出错，那么可以看出“explicit”有防止建立临时对象的作用*
+   + 下面我仍保持隐式转换的存在，即不增加“explicit”，而是将函数的参数改为非常量引用
+   + 这就是大前年文章中提到的那样将会出现编译错误，算了代码不贴了，没有意义
+   + *总结就是：如果使用常量引用，那么关闭隐式转换，避免产生临时对象而影响性能*
