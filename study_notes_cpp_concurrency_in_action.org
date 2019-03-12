@@ -68,7 +68,7 @@ gcc version 8.2.1 20181127 (GCC)
 4.20.12-arch1-1-ARCH
 #+END_SRC
 ** 第2章 线程管理（一）
-*** 启动线程
+*** 启动线程（一）<<ccia_2_1_1_0>>
     + 这里有坑，往下看，首先这里可以正确执行线程函数
     + 下面的代码可以正确输出（函数对象）
       - 这里为什么能正确执行，居然能显示出“operator()”的输出结果，我有点不太理解
@@ -135,6 +135,7 @@ int main(int argc, char *argv[])
              ^~~~
 #+END_SRC
     + 可以通过下面两种方法来解决上面的临时变量问题，将对象的定义改为下面二者之一即可
+    + 还有第三种方法，那就是使用C++11的新特性“右值引用”，见我的测试代码：[[ccia_2_1_1_1][第三种方法]]
 #+BEGIN_SRC 
 // 使用多组括号
 std::thread my_thread((background_task()));
@@ -177,3 +178,192 @@ int main(int argc, char *argv[])
   return 0;
 }
 #+END_SRC
+
+* <2019-03-12 周二> 《C++并发编程实战》读书笔记（二）
+** 第2章 线程管理（二）
+*** 启动线程（二）
+    + 在上面“[[ccia_2_1_1_0][启动线程（一）]]”中提到的函数对象现在回忆起来了，非常简单，就是重载了“()”操作符
+    + 因为临时变量的原因导致“std::thread my_thread(background_task());”变成函数声明的问题
+    + 可以通过“std::move”的“右值引用”实现，如下<<ccia_2_1_1_1>>
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+class background_task
+{
+public:
+  void operator()() const
+  {
+    std::cout << "operator()" << std::endl;
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  std::thread my_thread(std::move(background_task()));
+  my_thread.join();
+
+  return 0;
+}
+#+END_SRC
+#+BEGIN_SRC 
+// output
+operator()
+#+END_SRC
+    + 继续进行下面的内容，下面这段代码使线程分离执行（detach），访问局部变量，可能引起“悬挂引用”
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+struct func
+{
+  int &i;
+
+  func(int &i_) : i(i_) {}
+
+  void operator()()
+  {
+    for (unsigned n = 0; n < 10000; ++n) {
+      std::cout << i;
+      i++;
+    }
+
+    std::cout << std::endl;
+  }
+};
+
+void oops()
+{
+  int some_local_state = 0;
+  func my_func(some_local_state);
+  std::thread my_thread(my_func);
+  my_thread.detach();
+}
+
+int main(int argc, char *argv[])
+{
+  oops();
+
+  return 0;
+}
+#+END_SRC
+    + 如果想分离一个线程，可以在线程启动后直接使用“detach”进行分离，如果打算等待则“join”的位置要精心挑选
+    + 因为假如线程运行之后产生异常，此时“join”还没有调用，这意味着这次调用会被跳过
+    + *当倾向于在无异常情况下使用“join”时，需要在异常处理过程中调用“join”，从而避免生命周期的问题*
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+struct func
+{
+  int &i;
+
+  func(int &i_) : i(i_) {}
+
+  void operator()()
+  {
+    for (unsigned n = 0; n < 10000; ++n) {
+      std::cout << i;
+    }
+
+    std::cout << std::endl;
+  }
+};
+
+void oops()
+{
+  int some_local_state = 0;
+  func my_func(some_local_state);
+  std::thread my_thread(my_func);
+
+  try {
+    some_local_state = 2;
+  } catch (...) {
+    my_thread.join();
+    throw;
+  }
+
+  my_thread.join();
+}
+
+int main(int argc, char *argv[])
+{
+  oops();
+
+  return 0;
+}
+#+END_SRC
+    + 上面的这段代码使用了异常捕获，很容易理解不是吗！
+    + 也可以通过“RAII”的方式提供一个类来解决这个问题，代码如下
+#+BEGIN_SRC 
+#include <iostream>
+#include <thread>
+
+class thread_guard
+{
+  std::thread &t;
+
+public:
+  explicit thread_guard(std::thread &t_)
+    : t(t_)
+  {}
+
+  ~thread_guard()
+  {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
+
+  thread_guard(const thread_guard &) = delete;
+  thread_guard& operator=(const thread_guard &) = delete;
+};
+
+struct func
+{
+  int &i;
+
+  func(int &i_) : i(i_) {}
+
+  void operator()()
+  {
+    for (unsigned n = 0; n < 10000; ++n) {
+      std::cout << i;
+    }
+
+    std::cout << std::endl;
+  }
+};
+
+void oops()
+{
+  int some_local_state = 0;
+  func my_func(some_local_state);
+  std::thread my_thread(my_func);
+  thread_guard g(my_thread);
+  some_local_state = 2; // 1
+} // 2
+
+int main(int argc, char *argv[])
+{
+  oops();
+
+  return 0;
+}
+#+END_SRC
+    + 对上面的代码说明
+      - 刚开始不太理解为什么能确保在“1”处即使发生异常也能调用“thread_guard”的析构函数？
+      - 是不是因为当发生异常的时候程序流程将跳到“2”处，C++能确保已经生成的对象会被正确析构？
+      - 对异常不太了解，如果书上的意思是这样的话，那么上行的猜测应该也是正确的
+      - *“join”只能调用一次，再次调用将会导致错误，所以必须判断“joinable”*
+    + *如果不想等待线程结束，可以分离线程，从而避免异常安全问题*
+    + 不过“detach”也打破了线程和“std::thread”对象的联系，即使线程仍然在后台运行着
+    + *分离操作也能确保“std::terminate”在“std::thread”对象销毁才被调用*
+    + “detach”会让线程在后台运行，这就意味着主线程不能与之产生直接交互
+    + 如果有线程分离，那么主不可能有“std::thread”对象能引用它
+    + 分离线程的确在后台运行，所以分离线程不能被加放（join）
+    + 不过C++运行库保证当线程退出时相关资源能够正确回收，后台线程的归属和控制，C++运行库都会处理
+    + 分离线程为守护线程，它的另一方面只能确定线程什么时候结束，“发后即忘”（fire and forget）
+    + “detach”的使用
+      - 不能对没有执行线程的“std::thread”对象使用“detach”
+      - 当“joinable”返回真时，就可以使用“detach”
