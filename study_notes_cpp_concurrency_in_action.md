@@ -16,6 +16,9 @@
             - [传引用](#传引用)
     - [理解临时对象的来源<2016-11-21 Mon>](#理解临时对象的来源2016-11-21-mon)
     - [关于函数参数中常量引用的再理解](#关于函数参数中常量引用的再理解)
+- [<2019-03-13 Wed>读书笔记（三）](#2019-03-13-wed读书笔记三)
+    - [第2章 线程管理（二）](#第2章-线程管理二-1)
+        - [向线程函数传递参数（二）](#向线程函数传递参数二)
 
 <!-- markdown-toc end -->
 
@@ -288,7 +291,7 @@ int main(int argc, char *argv[])
 
 如果想分离一个线程，可以在线程启动后直接使用`detach()`进行分离，如果打算等待则`join()`的位置要精心挑选，因为假如线程运行之后产生异常，此时`join()`还没有调用，这意味着这次调用会被跳过。
 
-**当倾向于在无异常情况下使用`join()`时，需要在异常处理过程中调用`join()`，从而避免生命周期的问题。**
+当倾向于在无异常情况下使用`join()`时，需要在异常处理过程中调用`join()`，从而避免生命周期的问题。
 
 ```
 #include <iostream>
@@ -395,7 +398,7 @@ int main(int argc, char *argv[])
 
 对上面的代码说明：刚开始不太理解为什么能确保在“1”处即使发生异常也能调用`thread_guard`的析构函数？是不是因为当发生异常的时候程序流程将跳到“2”处，C++能确保已经生成的对象会被正确析构？对异常不太了解，如果书上的意思是这样的话，那么上面我的猜测应该也是正确的。
 
-**`join()`只能调用一次，再次调用将会导致错误，所以必须判断`joinable()`，如果不想等待线程结束，可以分离线程，从而避免异常安全问题。**
+`join()`只能调用一次，再次调用将会导致错误，所以必须判断`joinable()`，如果不想等待线程结束，可以分离线程，从而避免异常安全问题。
 
 不过`detach()`也打破了线程和`std::thread`对象的联系，即使线程仍然在后台运行着，**分离操作也能确保`std::terminate`在`std::thread`对象销毁才被调用。**
 
@@ -439,7 +442,7 @@ s: hello
 
 这里就像“关于函数参数中常量引用的再理解”说的一样，产生了临时对象，它将`const char *`转化为`std::string`
 
-**这里有个问题留着下次解决：上面的代码如果将`t.join();`注释掉程序运行崩溃，我想知道原因，输出如下：**
+这里有个问题留着下次解决：上面的代码如果将`t.join();`注释掉程序运行崩溃，我想知道原因，输出如下：
 
 ```
 % ./a.out
@@ -760,6 +763,99 @@ error C2664: 'void test_ref_to_const(const class_string &)':
 cannot convert argument 1 from 'char [6]' to 'const class_string &'
 ```
 
-**果然编译出错，那么可以看出“explicit”有防止建立临时对象的作用**，如果仍保持隐式转换的存在，即不增加`explicit`，而是将函数的参数改为非常量引用，这就是大前年文章中提到的那样将会出现编译错误，算了代码不贴了，没有意义。
+**果然编译出错，那么可以看出`explicit`有防止建立临时对象的作用**，如果仍保持隐式转换的存在，即不增加`explicit`，而是将函数的参数改为非常量引用，这就是大前年文章中提到的那样将会出现编译错误，算了代码不贴了，没有意义。
 
-**总结就是：如果使用常量引用，那么关闭隐式转换，避免产生临时对象而影响性能。**
+总结：如果使用常量引用，那么关闭隐式转换，避免产生临时对象而影响性能的可能性。
+
+# <2019-03-13 Wed>读书笔记（三）
+
+## 第2章 线程管理（二）
+
+### 向线程函数传递参数（二）
+
+越看问题越多，还是[传引用](#传引用)中提到的代码，通过将`update_data_for_widget`的参数修改为传值可以编译成功，但是输出结果让人费解，完整的测试代码如下：
+
+```
+#include <iostream>
+#include <thread>
+
+typedef int widget_id;
+
+class widget_data
+{
+public:
+  widget_data() : id(0)
+  {
+    std::cout << "widget_data()" << std::endl;
+  }
+
+  ~widget_data()
+  {
+    std::cout << "~widget_data()" << std::endl;
+  }
+
+  widget_id get_id() const
+  {
+    return id;
+  }
+
+  void set_id(widget_id id)
+  {
+    this->id = id;
+  }
+
+private:
+  widget_id id;
+};
+
+void update_data_for_widget(widget_id w, widget_data data) // 修改点
+{
+  data.set_id(w);
+}
+
+void oops_again(widget_id w)
+{
+  widget_data data;
+  std::thread t(update_data_for_widget, w, data);
+  std::cout << "data.id: " << data.get_id() << std::endl;
+  t.join();
+}
+
+int main(int argc, char *argv[])
+{
+  oops_again(3);
+
+  return 0;
+}
+```
+```
+% ./a.out 
+widget_data()
+~widget_data()
+data.id: 0
+~widget_data()
+~widget_data()
+~widget_data()
+```
+
+`widget_data`的析构函数居然被调用了四次。这是什么原因呢？
+
+在[传引用](#传引用)中提到的那些代码放到“VS2017”中编译，提示：
+
+```
+error C2672: 'std::invoke': no matching overloaded function found
+```
+
+上面信息好像是在说编译器是在找
+
+```
+void update_data_for_widget(widget_id w, widget_data data);
+```
+
+而不是在找
+
+```
+void update_data_for_widget(widget_id w, widget_data &data);
+```
+
+所以编译的时候报错，但是在我的“Archlinux”下编译好像又另外一个意思，输出不贴了，太长。
