@@ -38,9 +38,10 @@ void update_data_for_widget(widget_id w, widget_data &data)
 void oops_again(widget_id w)
 {
   widget_data data;
-  std::thread t(update_data_for_widget, w, data);
-  std::cout << "data.id: " << data.get_id() << std::endl;
+  std::thread t(update_data_for_widget, w, std::ref(data));
   t.join();
+
+  std::cout << "data.id: " << data.get_id() << std::endl;
 }
 
 int main(int argc, char *argv[])

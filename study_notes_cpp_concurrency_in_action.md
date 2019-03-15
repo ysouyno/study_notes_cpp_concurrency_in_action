@@ -13,12 +13,19 @@
         - [向线程函数传递参数（一）](#向线程函数传递参数一)
             - [传值](#传值)
             - [传指针](#传指针)
-            - [传引用](#传引用)
+            - [传引用（一）](#传引用一)
     - [理解临时对象的来源<2016-11-21 Mon>](#理解临时对象的来源2016-11-21-mon)
     - [关于函数参数中常量引用的再理解](#关于函数参数中常量引用的再理解)
 - [<2019-03-13 Wed>读书笔记（三）](#2019-03-13-wed读书笔记三)
     - [第2章 线程管理（二）](#第2章-线程管理二-1)
         - [向线程函数传递参数（二）](#向线程函数传递参数二)
+- [<2019-03-15 周五> 读书笔记（四）](#2019-03-15-周五-读书笔记四)
+    - [第2章 线程管理（三）](#第2章-线程管理三)
+        - [向线程函数传递参数（三）](#向线程函数传递参数三)
+            - [传引用（二）](#传引用二)
+        - [转移线程所有权](#转移线程所有权)
+            - [`std::thread`线程所有权在函数外转换](#stdthread线程所有权在函数外转换)
+            - [`std::thread`线程所有权在函数内转换](#stdthread线程所有权在函数内转换)
 
 <!-- markdown-toc end -->
 
@@ -29,6 +36,7 @@
 这章内容看得很累，好多地方读不懂，不知道想表达什么，书中有下面这段代码：
 
 ```
+// 01_01.cpp
 #include <iostream>
 #include <thread>
 
@@ -182,6 +190,7 @@ std::thread my_thread{background_task()};
 完整测试代码如下：
 
 ```
+// 02_else_01.cpp
 #include <iostream>
 #include <thread>
 
@@ -225,6 +234,7 @@ int main(int argc, char *argv[])
 因为临时变量的原因导致`std::thread my_thread(background_task());`变成了函数声明的问题，可以通过`std::move`的**右值引用**来解决。
 
 ```
+// 02_else_02.cpp
 #include <iostream>
 #include <thread>
 
@@ -253,6 +263,7 @@ operator()
 继续进行下面的内容，下面这段代码使线程分离执行`detach()`，访问局部变量，可能引起**悬挂引用**问题。
 
 ```
+// 02_01.cpp
 #include <iostream>
 #include <thread>
 
@@ -294,6 +305,7 @@ int main(int argc, char *argv[])
 当倾向于在无异常情况下使用`join()`时，需要在异常处理过程中调用`join()`，从而避免生命周期的问题。
 
 ```
+// 02_02.cpp
 #include <iostream>
 #include <thread>
 
@@ -340,6 +352,7 @@ int main(int argc, char *argv[])
 上面的这段代码使用了异常捕获，很容易理解不是吗！也可以通过**RAII**的方式提供一个类来解决这个问题，代码如下：
 
 ```
+// 02_03.cpp
 #include <iostream>
 #include <thread>
 
@@ -415,6 +428,7 @@ int main(int argc, char *argv[])
 补全书中代码如下：
 
 ```
+// 02_else_03.cpp
 #include <iostream>
 #include <string>
 #include <thread>
@@ -435,7 +449,7 @@ int main(int argc, char *argv[])
 ```
 ```
 // output
-% ./a.out
+% ./02_else_03
 i: 3
 s: hello
 ```
@@ -445,7 +459,7 @@ s: hello
 这里有个问题留着下次解决：上面的代码如果将`t.join();`注释掉程序运行崩溃，我想知道原因，输出如下：
 
 ```
-% ./a.out
+% ./02_else_03
 terminate called without an active exception
 [1]    6430 abort (core dumped)  ./a.out
 ```
@@ -455,6 +469,7 @@ terminate called without an active exception
 补全书中代码如下：
 
 ```
+// 02_else_04.cpp
 #include <iostream>
 #include <string>
 #include <thread>
@@ -482,7 +497,7 @@ int main(int argc, char *argv[])
 ```
 ```
 // output
-% ./a.out
+% ./02_else_04
 i: 3
 s: 23
 ```
@@ -490,6 +505,7 @@ s: 23
 我将书中的代码的`detach()`改为了`join()`，不然我无法看到输出，**“函数有很大的可能会在字面值转化成`std::string`对象之前崩溃”，不懂什么意思**，解决方案是传递到`std::string`构造函数之前将字面值转化为`std::string`对象，修改上面的代码如下：
 
 ```
+// 02_else_05.cpp
 #include <iostream>
 #include <string>
 #include <thread>
@@ -526,7 +542,7 @@ int main(int argc, char *argv[])
 ```
 ```
 // output
-% ./a.out
+% ./02_else_04
 i: 3
 s: 23
 i: 3
@@ -535,11 +551,12 @@ s: 32
 
 **这里也不懂什么意思，书中所言，见P30**，上面这种情况的问题是，想要依赖隐式转换将字面值转换为函数期待的`std::string`对象，但因`std::string`的构造函数会复制提供的变量，就只复制了没有转换成期望类型的字符串字面值。
 
-#### 传引用
+#### 传引用（一）
 
 补全书中代码，不知道为啥，下面这段代码编译有问题，一堆错误，先贴上再说。
 
 ```
+// 02_else_05.cpp
 #include <iostream>
 #include <thread>
 
@@ -776,6 +793,7 @@ cannot convert argument 1 from 'char [6]' to 'const class_string &'
 越看问题越多，还是[传引用](#传引用)中提到的代码，通过将`update_data_for_widget`的参数修改为传值可以编译成功，但是输出结果让人费解，完整的测试代码如下：
 
 ```
+// 02_else_05.cpp
 #include <iostream>
 #include <thread>
 
@@ -829,7 +847,7 @@ int main(int argc, char *argv[])
 }
 ```
 ```
-% ./a.out 
+% ./02_else_05
 widget_data()
 ~widget_data()
 data.id: 0
@@ -859,3 +877,232 @@ void update_data_for_widget(widget_id w, widget_data &data);
 ```
 
 所以编译的时候报错，但是在我的“Archlinux”下编译好像又另外一个意思，输出不贴了，太长。
+
+# <2019-03-15 周五> 读书笔记（四）
+
+## 第2章 线程管理（三）
+
+### 向线程函数传递参数（三）
+
+#### 传引用（二）
+
+为了确定不是我上面为了补全书中代码而写出来的问题，我将“02_else_03.cpp”的代码修改为，如下：
+
+```
+#include <iostream>
+#include <string>
+#include <thread>
+
+void f(int i, std::string &s)
+{
+  std::cout << "i: " << i << std::endl;
+  std::cout << "s: " << s << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t(f, 3, "hello");
+  t.join();
+
+  return 0;
+}
+```
+
+上面的代码，将`f`函数的第二个参数去掉`const`即修改为非常量引用，编译时果然出错，与“02_else_05.cpp”的出错信息完全一样，所以应该确定是`std::thread`我没有使用正确，即`std::thread`不能这么直接传引用，需要使用`std::ref()`或者`std::cref()`，因为上面代码的`"hello"`是常量字符串，所以你会发现即使使用了`std::ref()`或者`std::cref()`也同样报相同的错误，“02_else_05.cpp”中正确使用引用的方法如下：
+
+```
+// 02_else_05.cpp
+#include <iostream>
+#include <thread>
+
+typedef int widget_id;
+
+class widget_data
+{
+public:
+  widget_data() : id(0)
+  {
+    std::cout << "widget_data()" << std::endl;
+  }
+
+  ~widget_data()
+  {
+    std::cout << "~widget_data()" << std::endl;
+  }
+
+  widget_id get_id() const
+  {
+    return id;
+  }
+
+  void set_id(widget_id id)
+  {
+    this->id = id;
+  }
+
+private:
+  widget_id id;
+};
+
+void update_data_for_widget(widget_id w, widget_data &data)
+{
+  data.set_id(w);
+}
+
+void oops_again(widget_id w)
+{
+  widget_data data;
+  std::thread t(update_data_for_widget, w, std::ref(data));
+  t.join();
+
+  std::cout << "data.id: " << data.get_id() << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  oops_again(3);
+
+  return 0;
+}
+```
+```
+// output
+% ./02_else_05
+widget_data()
+data.id: 3
+~widget_data()
+```
+
+其中关于我上面遇到的问题在书中已做了讲解，但是我并没有完全看懂，我只是认为那段代码可以编译通过，书中所说：“`update_data_for_widget`的第二个参数期待传入一个引用，但是`std::thread`的构造函数并不知晓，构造函数**无视**函数期待的参数类型，并盲目的拷贝已提供的变量。当线程调用`update_data_for_widget`函数时，**传递给函数的参数是`data`变量内部拷贝的引用，而非数据本身的引用。**因此当线程结束时，内部拷贝数据将会在数据更新阶段被销毁。”，“**使用`std::ref`将参数转换成引用的形式。**”
+
+可能提供一个成员函数指针作为线程函数，并提供一个合适的对象指针作为线程函数的第一个参数：
+
+```
+// 02_else_06.cpp
+#include <iostream>
+#include <thread>
+
+class X
+{
+public:
+  void do_lengthy_work()
+  {
+    std::cout << "X::do_lengthy_work() called\n";
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  X my_x;
+  std::thread t(&X::do_lengthy_work, &my_x);
+  t.join();
+
+  return 0;
+}
+```
+```
+// output
+% ./02_else_06
+X::do_lengthy_work() called
+```
+
+移动操作可以将对象转换成可接受的类型，**例如：函数参数或函数返回的类型**（可以类型转换？这个高端特性我要了解一下），**当原对象是一个临时变量时，自动进行移动操作，但当原对象是一个命名变量，那么转换的时候就需要使用`std::move()`进行显式移动。**
+
+`DynArray`的面试题中我对“移动语义”和`std::move()`的区别不是太清楚，现在看来，如果在类中实现“移动语义”的话，那应该就是赋值指针，并将原指针设为`nullptr`，这应该是对的。
+
+### 转移线程所有权
+
+C++标准库中有很多资源占有（resource-owning）类型，比如`std::ifstream`，`std::unique_ptr`还有`std::thread`**都是可移动（movable），但不可拷贝（copyable）。**
+
+下面两个小章节是我自己看书分出来的，原书中并不存在
+
+#### `std::thread`线程所有权在函数外转换
+
+`std::thread`支持移动，就意味着线程的所有权可以在函数外进行转移，补全书中代码如下：
+
+```
+// 02_05_01.cpp
+#include <iostream>
+#include <thread>
+
+void some_function()
+{
+  std::cout << "some_function\n";
+}
+
+void some_other_function(int i)
+{
+  std::cout << "some_other_function(" << i << ")\n";
+}
+
+std::thread f()
+{
+  return std::thread(some_function);
+}
+
+std::thread g()
+{
+  std::thread t(some_other_function, 42);
+  return t;
+}
+
+int main(int argc, char *argv[])
+{
+  f().join();
+  g().join();
+
+  std::thread t1 = f();
+  t1.join();
+  std::thread t2 = g();
+  t2.join();
+
+  return 0;
+}
+```
+```
+// output
+% ./02_05_01
+some_function
+some_other_function(42)
+some_function
+some_other_function(42)
+```
+
+#### `std::thread`线程所有权在函数内转换
+
+当所有权可以在函数内部传递，就允许`std::thread`实例可作为参数进行传递，代码如下：
+
+```
+#include <iostream>
+#include <thread>
+
+void some_function()
+{
+  std::cout << "some_function\n";
+}
+
+void f(std::thread t)
+{
+  t.join();
+}
+
+void g()
+{
+  f(std::thread(some_function));
+  std::thread t(some_function);
+  f(std::move(t));
+}
+
+int main(int argc, char *argv[])
+{
+  g();
+
+  return 0;
+}
+```
+```
+// output
+% ./02_05_02
+some_function
+some_function
+```
