@@ -1,5 +1,3 @@
-《C++并发编程实战》读书笔记
-
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
 
@@ -23,9 +21,13 @@
     - [第2章 线程管理（三）](#第2章-线程管理三)
         - [向线程函数传递参数（三）](#向线程函数传递参数三)
             - [传引用（二）](#传引用二)
-        - [转移线程所有权](#转移线程所有权)
+        - [转移线程所有权（一）](#转移线程所有权一)
             - [`std::thread`线程所有权在函数外转换](#stdthread线程所有权在函数外转换)
             - [`std::thread`线程所有权在函数内转换](#stdthread线程所有权在函数内转换)
+- [<2019-03-19 周二> 读书笔记（五）](#2019-03-19-周二-读书笔记五)
+    - [第2章 线程管理（四）](#第2章-线程管理四)
+        - [转移线程所有权（二）](#转移线程所有权二)
+        - [运行时决定线程数量](#运行时决定线程数量)
 
 <!-- markdown-toc end -->
 
@@ -142,6 +144,8 @@ int main(int argc, char *argv[])
 // output
 operator()
 ```
+
+<span id="background_task"></span>
 
 下面的代码编译出错，因为**如果你传递了一个临时变量，而不是一个命名变量，C++编译器会将其解析为函数声明，而不是对象定义**，通过下面的编译出错信息确实可以看到是这样子的。
 
@@ -351,6 +355,8 @@ int main(int argc, char *argv[])
 
 上面的这段代码使用了异常捕获，很容易理解不是吗！也可以通过**RAII**的方式提供一个类来解决这个问题，代码如下：
 
+<span id="thread_guard"></span>
+
 ```
 // 02_03.cpp
 #include <iostream>
@@ -413,7 +419,7 @@ int main(int argc, char *argv[])
 
 `join()`只能调用一次，再次调用将会导致错误，所以必须判断`joinable()`，如果不想等待线程结束，可以分离线程，从而避免异常安全问题。
 
-不过`detach()`也打破了线程和`std::thread`对象的联系，即使线程仍然在后台运行着，**分离操作也能确保`std::terminate`在`std::thread`对象销毁才被调用。**
+不过`detach()`也打破了线程和`std::thread`对象的联系，即使线程仍然在后台运行着，**分离操作也能确保`std::terminate`在`std::thread`对象销毁才被调用**。
 
 `detach()`会让线程在后台运行，这就意味着主线程不能与之产生直接交互，如果有线程分离，那么就不可能有`std::thread`对象能引用它。分离线程的确在后台运行，所以分离线程不能被加入`join()`，不过C++运行库保证当线程退出时相关资源能够正确回收，后台线程的归属和控制，C++运行库都会处理。分离线程为守护线程，它的另一方面只能确定线程什么时候结束，“发后即忘”（fire and forget）。
 
@@ -502,7 +508,7 @@ i: 3
 s: 23
 ```
 
-我将书中的代码的`detach()`改为了`join()`，不然我无法看到输出，**“函数有很大的可能会在字面值转化成`std::string`对象之前崩溃”，不懂什么意思**，解决方案是传递到`std::string`构造函数之前将字面值转化为`std::string`对象，修改上面的代码如下：
+我将书中的代码的`detach()`改为了`join()`，不然我无法看到输出，**函数有很大的可能会在字面值转化成`std::string`对象之前崩溃，不懂什么意思**，解决方案是传递到`std::string`构造函数之前将字面值转化为`std::string`对象，修改上面的代码如下：
 
 ```
 // 02_else_05.cpp
@@ -790,7 +796,7 @@ cannot convert argument 1 from 'char [6]' to 'const class_string &'
 
 ### 向线程函数传递参数（二）
 
-越看问题越多，还是[传引用](#传引用)中提到的代码，通过将`update_data_for_widget`的参数修改为传值可以编译成功，但是输出结果让人费解，完整的测试代码如下：
+越看问题越多，还是[传引用（一）](#传引用一)中提到的代码，通过将`update_data_for_widget`的参数修改为传值可以编译成功，但是输出结果让人费解，完整的测试代码如下：
 
 ```
 // 02_else_05.cpp
@@ -858,7 +864,7 @@ data.id: 0
 
 `widget_data`的析构函数居然被调用了四次。这是什么原因呢？
 
-在[传引用](#传引用)中提到的那些代码放到“VS2017”中编译，提示：
+在[传引用（一）](#传引用一)中提到的那些代码放到“VS2017”中编译，提示：
 
 ```
 error C2672: 'std::invoke': no matching overloaded function found
@@ -973,7 +979,7 @@ data.id: 3
 ~widget_data()
 ```
 
-其中关于我上面遇到的问题在书中已做了讲解，但是我并没有完全看懂，我只是认为那段代码可以编译通过，书中所说：“`update_data_for_widget`的第二个参数期待传入一个引用，但是`std::thread`的构造函数并不知晓，构造函数**无视**函数期待的参数类型，并盲目的拷贝已提供的变量。当线程调用`update_data_for_widget`函数时，**传递给函数的参数是`data`变量内部拷贝的引用，而非数据本身的引用。**因此当线程结束时，内部拷贝数据将会在数据更新阶段被销毁。”，“**使用`std::ref`将参数转换成引用的形式。**”
+其中关于我上面遇到的问题在书中已做了讲解，但是我并没有完全看懂，我只是认为那段代码可以编译通过，书中所说：“`update_data_for_widget`的第二个参数期待传入一个引用，但是`std::thread`的构造函数并不知晓，构造函数**无视**函数期待的参数类型，并盲目的拷贝已提供的变量。当线程调用`update_data_for_widget`函数时**，传递给函数的参数是`data`变量内部拷贝的引用，而非数据本身的引用**。因此当线程结束时，内部拷贝数据将会在数据更新阶段被销毁。”，“**使用`std::ref`将参数转换成引用的形式**”。
 
 可能提供一个成员函数指针作为线程函数，并提供一个合适的对象指针作为线程函数的第一个参数：
 
@@ -1006,13 +1012,13 @@ int main(int argc, char *argv[])
 X::do_lengthy_work() called
 ```
 
-移动操作可以将对象转换成可接受的类型，**例如：函数参数或函数返回的类型**（可以类型转换？这个高端特性我要了解一下），**当原对象是一个临时变量时，自动进行移动操作，但当原对象是一个命名变量，那么转换的时候就需要使用`std::move()`进行显式移动。**
+移动操作可以将对象转换成可接受的类型，**例如：函数参数或函数返回的类型**（可以类型转换？这个高端特性我要了解一下），**当原对象是一个临时变量时，自动进行移动操作，但当原对象是一个命名变量，那么转换的时候就需要使用`std::move()`进行显式移动**。
 
 `DynArray`的面试题中我对“移动语义”和`std::move()`的区别不是太清楚，现在看来，如果在类中实现“移动语义”的话，那应该就是赋值指针，并将原指针设为`nullptr`，这应该是对的。
 
-### 转移线程所有权
+### 转移线程所有权（一）
 
-C++标准库中有很多资源占有（resource-owning）类型，比如`std::ifstream`，`std::unique_ptr`还有`std::thread`**都是可移动（movable），但不可拷贝（copyable）。**
+C++标准库中有很多资源占有（resource-owning）类型，比如`std::ifstream`，`std::unique_ptr`还有`std::thread`**都是可移动（movable），但不可拷贝（copyable）**。
 
 下面两个小章节是我自己看书分出来的，原书中并不存在
 
@@ -1106,3 +1112,347 @@ int main(int argc, char *argv[])
 some_function
 some_function
 ```
+
+# <2019-03-19 周二> 读书笔记（五）
+
+## 第2章 线程管理（四）
+
+### 转移线程所有权（二）
+
+`std::thread`支持移动的好处是可以创建`thread_guard`类的实例（见[`thread_guard`](#thread_guard)），**并且拥有其线程的所有权**，当`thread_guard`对象所拥有的线程已经被引用，移动操作就可以避免很多不必要的麻烦；这意味着，当某个对象转移了线程所有权后，它就不能对线程进行加入或分离。
+
+刚才看这句话的时候脑子还在想为什么会这样？为什么构造函数传入的是`std::thread &t_`，这里却说是移动操作呢？我觉得以后再看的时候也会有这样的想法，所以在这里提醒一下，因为`thread_guard`的构造函数已经删除了默认拷贝构造函数和赋值操作符；此外在上面也提到了关于`std::thread`的这类对象**都是可移动（movable），但不可拷贝（copyable）**，见[转移线程所有权（一）](#转移线程所有权一)，所以关于`thread_guard`的代码就好理解了。
+
+为了确保线程程序退出前完成，下面代码里定义了`scoped_thread`类，补全书中代码如下
+
+```
+// 02_06_01.cpp
+#include <iostream>
+#include <thread>
+
+class scoped_thread
+{
+  std::thread t;
+
+public:
+  explicit scoped_thread(std::thread t_) :
+    t(std::move(t_))
+  {
+    std::cout << "scoped_thread constructor" << std::endl;
+
+    if (!t.joinable()) {
+      throw std::logic_error("No thread");
+    }
+  }
+
+  ~scoped_thread()
+  {
+    t.join();
+  }
+
+  scoped_thread(const scoped_thread &) = delete;
+  scoped_thread& operator=(const scoped_thread &) = delete;
+};
+
+struct func
+{
+  int &i;
+
+  func(int &i_) : i(i_)
+  {
+    std::cout << "func constructor" << std::endl;
+  }
+
+  void operator()()
+  {
+    for (unsigned n = 0; n < 100; ++n) {
+      std::cout << i;
+      i++;
+    }
+
+    std::cout << std::endl;
+  }
+};
+
+void f()
+{
+  int some_local_state = 0;
+  scoped_thread t(std::thread(func(some_local_state)));
+
+  std::cout << "press any key to quit" << std::endl;
+  getchar();
+}
+
+int main(int argc, char *argv[])
+{
+  f();
+
+  return 0;
+}
+```
+
+上面的程序是原书中的代码，运行将会发现没有任何输出和异常，不合逻辑在我看来，因为我添加了`getchar()`来看下程序输出，但是什么也没有，包括`scoped_thread`和`func`的构造函数信息，说明没有被调用啊。
+
+回想在[`background_task`临时变量问题](#background_task)的问题，即`std::thread(func(some_local_state))`并不是一个`std::thread`的对象定义，而一个函数声明，所以本书中是不是前后矛盾了？如果我进行下面的修改是不是会有好转呢？
+
+即将``修改为`scoped_thread t(std::thread{func(some_local_state)});`
+
+```
+// 02_06_02.cpp
+#include <iostream>
+#include <thread>
+
+class scoped_thread
+{
+  std::thread t;
+
+public:
+  explicit scoped_thread(std::thread t_) :
+    t(std::move(t_))
+  {
+    std::cout << "scoped_thread constructor" << std::endl;
+
+    if (!t.joinable()) {
+      throw std::logic_error("No thread");
+    }
+  }
+
+  ~scoped_thread()
+  {
+    t.join();
+  }
+
+  scoped_thread(const scoped_thread &) = delete;
+  scoped_thread& operator=(const scoped_thread &) = delete;
+};
+
+struct func
+{
+  int &i;
+
+  func(int &i_) : i(i_)
+  {
+    std::cout << "func constructor" << std::endl;
+  }
+
+  void operator()()
+  {
+    for (unsigned n = 0; n < 100; ++n) {
+      std::cout << i;
+      i++;
+    }
+
+    std::cout << std::endl;
+  }
+};
+
+void f()
+{
+  int some_local_state = 0;
+  scoped_thread t(std::thread{func(some_local_state)});
+
+  std::cout << "press any key to quit" << std::endl;
+  getchar();
+}
+
+int main(int argc, char *argv[])
+{
+  f();
+
+  return 0;
+}
+```
+
+这样这就是我所期待的输出，我认为这应该就是本书作者想要表达的意思吧！这里新线程是直接传递到`scoped_thread`中，而非创建一个独立的命名变量。当主线程到达`f()`函数末尾时，`scoped_thread`对象将会销毁，然后线程被`join()`，与`thread_guard`不同的是，这里检查线程的`joinable()`放到了构造函数中，如果线程不可加入，抛出异常。
+
+将`std::thread`放入`std::vector`是向线程自动化管理迈出的第一步：并非为这些线程创建独立的变量，并且将他们直接加入，可以把它们当做一个组
+
+```
+// 02_07.cpp
+#include <iostream>
+#include <vector>
+#include <thread>
+#include <algorithm>
+#include <functional>
+
+void do_work(unsigned id)
+{
+  std::cout << "do_work: " << id << std::endl;
+}
+
+void f()
+{
+  std::vector<std::thread> threads;
+
+  for (unsigned i = 0; i < 20; ++i) {
+    threads.push_back(std::thread(do_work, i));
+  }
+
+  std::for_each(threads.begin(),
+                threads.end(),
+                std::mem_fn(&std::thread::join)
+                );
+}
+
+int main(int argc, char *argv[])
+{
+  f();
+
+  return 0;
+}
+```
+```
+// output
+% ./02_07
+do_work: 4
+do_work: 5
+do_work: 3
+do_work: 7
+do_work: 1
+do_work: 2
+do_work: 6
+do_work: 8
+do_work: 10
+do_work: 11
+do_work: 9
+do_work: 12
+do_work: 13
+do_work: 14
+do_work: 15
+do_work: 16
+do_work: 0
+do_work: 17
+do_work: 19
+do_work: 18
+```
+
+### 运行时决定线程数量
+
+补全书中代码
+
+```
+// 02_08.cpp
+#include <iostream>
+#include <thread>
+#include <vector>
+#include <numeric>
+#include <algorithm>
+#include <functional>
+
+template<typename Iterator, typename T>
+struct accumulate_block
+{
+  void operator()(Iterator first, Iterator last, T& result)
+  {
+    result = std::accumulate(first, last, result);
+  }
+};
+
+template<typename Iterator, typename T>
+T parallel_accumulate(Iterator first, Iterator last, T init)
+{
+  const unsigned long length = std::distance(first, last);
+
+  if (!length) {
+    return init;
+  }
+
+  const unsigned long min_per_thread = 25;
+  const unsigned long max_threads =
+    (length + min_per_thread - 1) / min_per_thread;
+  std::cout << "min_per_thread: " << min_per_thread << std::endl;
+  std::cout << "max_threads: " << max_threads << std::endl;
+
+  const unsigned long hardware_threads =
+    std::thread::hardware_concurrency();
+  std::cout << "hardware_threads: " << hardware_threads << std::endl;
+
+  const unsigned long num_threads =
+    std::min(hardware_threads != 0 ? hardware_threads : 2, max_threads);
+  std::cout << "num_threads: " << num_threads << std::endl;
+
+  const unsigned long block_size = length / num_threads;
+  std::cout << "block_size: " << block_size << std::endl;
+
+  std::vector<T> results(num_threads);
+  std::vector<std::thread> threads(num_threads - 1);
+
+  Iterator block_start = first;
+  for (unsigned long i = 0; i < (num_threads - 1); ++i) {
+    Iterator block_end = block_start;
+    std::advance(block_end, block_size);
+
+    threads[i] = std::thread(accumulate_block<Iterator, T>(),
+                             block_start, block_end, std::ref(results[i])
+                             );
+
+    block_start = block_end;
+  }
+
+  accumulate_block<Iterator, T>()(block_start, last, results[num_threads - 1]);
+
+  std::for_each(threads.begin(),
+                threads.end(),
+                std::mem_fn(&std::thread::join)
+                );
+
+  return std::accumulate(results.begin(), results.end(), init);
+}
+
+void test_accumulate_block()
+{
+  std::cout << "test_accumulate_block" << std::endl;
+
+  std::vector<int> vec{1, 2, 3};
+  int sum = 0;
+
+  std::thread t(accumulate_block<std::vector<int>::iterator, int>(),
+                vec.begin(), vec.end(), std::ref(sum)
+                );
+  t.join();
+
+  std::cout << "sum: " << sum << std::endl;
+}
+
+void test_parallel_accumulate()
+{
+  std::cout << "test_parallel_accumulate" << std::endl;
+
+  std::vector<int> vec;
+
+  for (unsigned i = 1; i <= 100; ++i) {
+    vec.push_back(i);
+  }
+
+  int sum = parallel_accumulate(vec.begin(), vec.end(), 0);
+
+  std::cout << "sum: " << sum << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  test_accumulate_block();
+  std::cout << std::endl;
+  test_parallel_accumulate();
+
+  return 0;
+}
+```
+```
+// output
+% ./02_08
+test_accumulate_block
+sum: 6
+
+test_parallel_accumulate
+min_per_thread: 25
+max_threads: 4
+hardware_threads: 1
+num_threads: 1
+block_size: 100
+sum: 5050
+```
+
+这段代码确实很简单，但是书中所提到的信息由于我眼光窄，没接触过，还不了解这些知识点。
+
+书中所言：结束这个例子之前，需要明确：`T`类型的加法运算不满足结合律（比如，对于`float`型或`double`型，在进行加法操作之时，系统很可能会做截断操作），因为对范围中元素的分组，会导致`parallel_accumulate`得到的结果可能与`std::accumulate`得到的结果不同。同样的，这里对迭代器的要求更加严格：必须都是向前迭代器（forward iterator），而`std::accumulate`可以在只传入迭代器（input iterator）的情况下工作。对于创建出`result`容器，需要保证`T`有默认构造函数。对于算法并行，通常都要这样的修改；不过，需要根据算法本身的特性，选择不同的并行方式。需要注意：**因为不能直接从一个线程中返回一个值，所以需要传递`result`容器的引用到线程中去。另一个办法，通过地址来获取线程执行结果；第4章中，我们将使用（futures）完成这种方案**。
