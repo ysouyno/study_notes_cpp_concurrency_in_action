@@ -28,6 +28,8 @@
     - [第2章 线程管理（四）](#第2章-线程管理四)
         - [转移线程所有权（二）](#转移线程所有权二)
         - [运行时决定线程数量](#运行时决定线程数量)
+        - [识别线程（略）](#识别线程略)
+        - [总结（略）](#总结略)
 
 <!-- markdown-toc end -->
 
@@ -1195,7 +1197,7 @@ int main(int argc, char *argv[])
 
 回想在[`background_task`临时变量问题](#background_task)的问题，即`std::thread(func(some_local_state))`并不是一个`std::thread`的对象定义，而一个函数声明，所以本书中是不是前后矛盾了？如果我进行下面的修改是不是会有好转呢？
 
-即将``修改为`scoped_thread t(std::thread{func(some_local_state)});`
+即将`scoped_thread t(std::thread(func(some_local_state)));`修改为`scoped_thread t(std::thread{func(some_local_state)});`
 
 ```
 // 02_06_02.cpp
@@ -1456,3 +1458,7 @@ sum: 5050
 这段代码确实很简单，但是书中所提到的信息由于我眼光窄，没接触过，还不了解这些知识点。
 
 书中所言：结束这个例子之前，需要明确：`T`类型的加法运算不满足结合律（比如，对于`float`型或`double`型，在进行加法操作之时，系统很可能会做截断操作），因为对范围中元素的分组，会导致`parallel_accumulate`得到的结果可能与`std::accumulate`得到的结果不同。同样的，这里对迭代器的要求更加严格：必须都是向前迭代器（forward iterator），而`std::accumulate`可以在只传入迭代器（input iterator）的情况下工作。对于创建出`result`容器，需要保证`T`有默认构造函数。对于算法并行，通常都要这样的修改；不过，需要根据算法本身的特性，选择不同的并行方式。需要注意：**因为不能直接从一个线程中返回一个值，所以需要传递`result`容器的引用到线程中去。另一个办法，通过地址来获取线程执行结果；第4章中，我们将使用（futures）完成这种方案**。
+
+### 识别线程（略）
+
+### 总结（略）
