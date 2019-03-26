@@ -1,11 +1,11 @@
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
 
-- [<2019-03-11 Mon>读书笔记（一）](#2019-03-11-mon读书笔记一)
+- [<2019-03-11 周一> 《C++并发编程实战》读书笔记（一）](#2019-03-11-周一-c并发编程实战读书笔记一)
     - [第1章 你好，C++的并发世界](#第1章-你好c的并发世界)
     - [第2章 线程管理（一）](#第2章-线程管理一)
         - [启动线程（一）](#启动线程一)
-- [<2019-03-12 Tue>读书笔记（二）](#2019-03-12-tue读书笔记二)
+- [<2019-03-12 周二> 《C++并发编程实战》读书笔记（二）](#2019-03-12-周二-c并发编程实战读书笔记二)
     - [第2章 线程管理（二）](#第2章-线程管理二)
         - [启动线程（二）](#启动线程二)
         - [向线程函数传递参数（一）](#向线程函数传递参数一)
@@ -14,26 +14,36 @@
             - [传引用（一）](#传引用一)
     - [理解临时对象的来源<2016-11-21 Mon>](#理解临时对象的来源2016-11-21-mon)
     - [关于函数参数中常量引用的再理解](#关于函数参数中常量引用的再理解)
-- [<2019-03-13 Wed>读书笔记（三）](#2019-03-13-wed读书笔记三)
+- [<2019-03-13 周三> 《C++并发编程实战》读书笔记（三）](#2019-03-13-周三-c并发编程实战读书笔记三)
     - [第2章 线程管理（二）](#第2章-线程管理二-1)
         - [向线程函数传递参数（二）](#向线程函数传递参数二)
-- [<2019-03-15 周五> 读书笔记（四）](#2019-03-15-周五-读书笔记四)
+- [<2019-03-15 周五> 《C++并发编程实战》读书笔记（四）](#2019-03-15-周五-c并发编程实战读书笔记四)
     - [第2章 线程管理（三）](#第2章-线程管理三)
         - [向线程函数传递参数（三）](#向线程函数传递参数三)
             - [传引用（二）](#传引用二)
         - [转移线程所有权（一）](#转移线程所有权一)
             - [`std::thread`线程所有权在函数外转换](#stdthread线程所有权在函数外转换)
             - [`std::thread`线程所有权在函数内转换](#stdthread线程所有权在函数内转换)
-- [<2019-03-19 周二> 读书笔记（五）](#2019-03-19-周二-读书笔记五)
+- [<2019-03-19 周二> 《C++并发编程实战》读书笔记（五）](#2019-03-19-周二-c并发编程实战读书笔记五)
     - [第2章 线程管理（四）](#第2章-线程管理四)
         - [转移线程所有权（二）](#转移线程所有权二)
         - [运行时决定线程数量](#运行时决定线程数量)
         - [识别线程（略）](#识别线程略)
         - [总结（略）](#总结略)
+- [<2019-03-26 周二> 《C++并发编程实战》读书笔记（六）](#2019-03-26-周二-c并发编程实战读书笔记六)
+    - [第3章 线程间共享数据（一）](#第3章-线程间共享数据一)
+        - [使用互斥量保护共享数据](#使用互斥量保护共享数据)
+            - [C++中使用互斥量](#c中使用互斥量)
+            - [精心组织代码来保护共享数据](#精心组织代码来保护共享数据)
+            - [发现接口内在的条件竞争](#发现接口内在的条件竞争)
+                - [选项1-传入一个引用](#选项1-传入一个引用)
+                - [选项2-无异常抛出的拷贝构造函数或移动构造函数](#选项2-无异常抛出的拷贝构造函数或移动构造函数)
+                - [选项3-返回指向弹出值的指针](#选项3-返回指向弹出值的指针)
+                - [选项4-“选项1和2”或“选项1和3”](#选项4-选项1和2或选项1和3)
 
 <!-- markdown-toc end -->
 
-# <2019-03-11 Mon>读书笔记（一）
+# <2019-03-11 周一> 《C++并发编程实战》读书笔记（一）
 
 ## 第1章 你好，C++的并发世界
 
@@ -231,7 +241,7 @@ int main(int argc, char *argv[])
 }
 ```
 
-# <2019-03-12 Tue>读书笔记（二）
+# <2019-03-12 周二> 《C++并发编程实战》读书笔记（二）
 
 ## 第2章 线程管理（二）
 
@@ -792,7 +802,7 @@ cannot convert argument 1 from 'char [6]' to 'const class_string &'
 
 总结：如果使用常量引用，那么关闭隐式转换，避免产生临时对象而影响性能的可能性。
 
-# <2019-03-13 Wed>读书笔记（三）
+# <2019-03-13 周三> 《C++并发编程实战》读书笔记（三）
 
 ## 第2章 线程管理（二）
 
@@ -886,7 +896,7 @@ void update_data_for_widget(widget_id w, widget_data &data);
 
 所以编译的时候报错，但是在我的“Archlinux”下编译好像又另外一个意思，输出不贴了，太长。
 
-# <2019-03-15 周五> 读书笔记（四）
+# <2019-03-15 周五> 《C++并发编程实战》读书笔记（四）
 
 ## 第2章 线程管理（三）
 
@@ -1115,7 +1125,7 @@ some_function
 some_function
 ```
 
-# <2019-03-19 周二> 读书笔记（五）
+# <2019-03-19 周二> 《C++并发编程实战》读书笔记（五）
 
 ## 第2章 线程管理（四）
 
@@ -1462,3 +1472,327 @@ sum: 5050
 ### 识别线程（略）
 
 ### 总结（略）
+
+# <2019-03-26 周二> 《C++并发编程实战》读书笔记（六）
+
+## 第3章 线程间共享数据（一）
+
+### 使用互斥量保护共享数据
+
+#### C++中使用互斥量
+
+下面这段代码中这个全局的互斥量使得这两个函数中对数据的访问是互斥的：`list_contains()`不可能看到正在被`add_to_list()`修改的列表。但是具有访问能力的指针或引用可以访问（并可能修改）被保护的数据，而不会被互斥锁限制。
+
+```
+// 03_01.cpp
+#include <list>
+#include <mutex>
+#include <algorithm>
+
+std::list<int> some_list;
+std::mutex some_mutex;
+
+void add_to_list(int new_value)
+{
+  std::lock_guard<std::mutex> guard(some_mutex);
+  some_list.push_back(new_value);
+}
+
+bool list_contains(int value_to_find)
+{
+  std::lock_guard<std::mutex> guard(some_mutex);
+  return std::find(some_list.begin(), some_list.end(), value_to_find)
+    != some_list.end();
+}
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+#### 精心组织代码来保护共享数据
+
+在确保成员函数不会传出指针或引用的同时，检查成员函数是否通过指针或引用的方式来调用也是很重要的（尤其是这个操作不在你的控制下时）。函数可能没在互斥量保护的区域内，存储着指针或者引用，这样就很危险。更危险的是：将保护数据作为一个运行时参数，如同下面代码中所示那样。
+
+```
+// 03_02.cpp
+#include <iostream>
+#include <string>
+#include <mutex>
+
+class some_data
+{
+  int a;
+  std::string b;
+
+public:
+  void do_something()
+  {
+    std::cout << "do_something()" << std::endl;
+  }
+};
+
+class data_wrapper
+{
+  some_data data;
+  std::mutex m;
+
+public:
+  template<typename Function>
+  void process_data(Function func)
+  {
+    std::lock_guard<std::mutex> l(m);
+    func(data);
+  }
+};
+
+some_data *unprotected;
+
+void malicious_function(some_data &protected_data)
+{
+  unprotected = &protected_data;
+}
+
+data_wrapper x;
+
+void foo()
+{
+  x.process_data(malicious_function);
+  unprotected->do_something();
+}
+
+int main(int argc, char *argv[])
+{
+  foo();
+
+  return 0;
+}
+```
+
+需要保护的数据及互斥锁一般都是类的私有成员，虽然`std::lock_guard`对数据做了很好的保护，但调用用户提供的函数`func`，就意味着`foo`能够绕过保护机制将函数`malicious_function`传递进去，在没有锁定互斥量的情况下调用`do_something()`。这段代码问题在于根本没有保护，只是将所有可访问的数据结构代码标记为互斥。函数`foo()`中调用`unprotected->do_something()`的代码未能被标记为互斥。这种情况下，C++线程库无法提供任何帮助，只能由程序员来使用正确的互斥锁来保护数据。
+
+#### 发现接口内在的条件竞争
+
+这里的内容作者主要是想表达像下面这个`stack<T, Container>`类的**问题发生在接口设计上，所以解决的方法也就是改变接口设计**。
+
+补全书中代码，需要注意的是，缺少的代码太多，我只补全了其中需要用到的四个成员函数，只是为了能使代码可以顺利编译，而且此代码也存在内存泄漏。
+
+```
+// 03_03.cpp
+#include <iostream>
+#include <deque>
+
+template<typename T, typename Container = std::deque<T> >
+class stack
+{
+public:
+  explicit stack(const Container&);
+  explicit stack(Container&& = Container());
+  template <class Alloc> explicit stack(const Alloc&);
+  template <class Alloc> stack(const Container&, const Alloc&);
+  template <class Alloc> stack(Container&&, const Alloc&);
+  template <class Alloc> stack(stack&&, const Alloc&);
+
+  bool empty() const;
+  size_t size() const;
+  T& top();
+  const T& top() const;
+  void push(const T&);
+  void push(T&&);
+  void pop();
+  void swap(stack&&);
+};
+
+template<typename T, typename Container>
+stack<T, Container>::stack(Container &&)
+{
+}
+
+template<typename T, typename Container>
+bool stack<T, Container>::empty() const
+{
+  return false;
+}
+
+template<typename T, typename Container>
+T& stack<T, Container>::top()
+{
+  T *t = new T;
+  return *t;
+}
+
+template<typename T, typename Container>
+void stack<T, Container>::pop()
+{
+}
+
+void do_something(int value)
+{
+  std::cout << "do_something(" << value << ")" << std::endl;
+}
+
+void test()
+{
+  stack<int> s;
+  if (!s.empty()) {
+    const int value = s.top();
+    s.pop();
+    do_something(value);
+  }
+}
+
+int main(int argc, char *argv[])
+{
+  test();
+
+  return 0;
+}
+```
+
+以上是单线程安全代码，那么上面的代码怎么改才能称为改变接口设计呢？在这个简单的例子中，当调用`top()`时，发现栈已经是空的了，那么就抛出异常。**虽然这能直接解决这个问题，但这是一个笨拙的解决方案**，这样的话，即使`empty()`返回`false`的情况下，你也需要异常捕获机制。**本质上，这样的改变会让`empty()`成为一个多余函数**（这是确实，反正为空会抛出异常，那还要`empty()`做什么呢？）
+
+原书中：说一些大家没有意识到的问题。这个问题概述为在`pop()`时，当拷贝数据的时候抛出一个异常，这时要弹出的数据将会丢失，它的确从栈上移出了，但是拷贝失败了。`std::stack`的设计人员将这个操作分为两部分：先获取顶部元素（top()），然后从栈中移除（pop()）。这样，在不能安全的将元素拷贝出去的情况下，栈中的这个元素还依旧存在，没有丢失。**不幸的是，这样的分割却制造了本想避免或消除的条件竞争**（这里没看懂，这样的分割是怎么制造了条件竞争？）。幸运的是，我们还有别的选项，但是这些选项是要付出代价的。
+
+##### 选项1-传入一个引用
+
+``**
+std::vector<int> result;
+some_stack.pop(result);
+`****
+
+大多数情况下，这种方式还不错，但有明显的缺点：需要临时构造出一个堆中类型的实例，用于接收目标值。对于一些类型，这样做是不现实的，因为临时构造一个实例，从时间和资源的角度来看都是不划算的。对于其他的类型，这样也不总能行得通，因为构造函数要是需要一些参数呢！最后，需要可赋值的存储类型，这是一个重大的限制：即使支持移动构造，甚至是拷贝构造（从而允许返回一个值），很多用户自定义类型可能都不支持赋值操作。
+
+##### 选项2-无异常抛出的拷贝构造函数或移动构造函数
+
+对于有返回值的`pop(**`函数来说，只有“异常安全”方面的担忧（当返回值时可以抛出一个异常），（就像上面说的那样，弹出的数据拷贝失败了，但它也从栈上移出了）。很多类型都有拷贝构造函数，它们不会抛出异常。一个有用的选项可以限制对线程安全的栈的使用，并且能 让栈安全的返回所需的值，而不会抛出异常。
+
+虽然安全，但非可靠。尽管能在编译时，使用`std::is_nothrow_copy_constructible`和`std::is_nothrow_move_constructible`类型特征，让拷贝或移动构造函数不抛出异常，但是这种方式的局限性太强。因为有很多的用户定义类型有可抛出异常的拷贝构造函数，没有移动构造函数；或是，都不抛出异常的构造函数。如果类型不能存储线程安全的堆栈，想想该是多么的不幸。
+
+##### 选项3-返回指向弹出值的指针
+
+第三个选择是返回一个指向弹出的元素的指针，而不是直接返回值。**指针的优势是自由拷贝，并且不会产生异常**，（原来指针的优势是不会产生异常）。缺点就是返回一个指针需要对对象的内存分配进行管理，对于简单数据类型（比如：`int`），内存管理的开销远大于直接返回值（这种标准类型就直接返回值最好，不要使用指针啦）。对于选择这个方案的接口，使用`std::shared_ptr`是个不错的选择，避免内存泄露，而且标准库能够完全控制内存分配方案。这种优化是很重要的：因为堆栈中的每个对象，都需要`new`进行独立内存分配，相较于非线程安全版本，这个方案的开销相当大。
+
+##### 选项4-“选项1和2”或“选项1和3”
+
+对于通用的代码来说，灵活性不应忽视。当你已经选择了选项2或3时，再去选择1也是很容易的。这些选项提供给用户，让用户自己选择对于他们自己来说最合适最经刘的方案。
+
+下面就一个线程安全的堆栈，它是一个**接口没有条件竞争的堆栈类定义**，它实现了**选项1和选项3**：重载了`pop()`，使用一个局部引用去存储弹出值，并返回一个`std::shared_ptr<>`对象。
+
+```
+// 03_04.cpp
+#include <exception>
+#include <memory>
+
+struct empty_stack : std::exception
+{
+  const char *what() const throw() { return nullptr; }
+};
+
+template<typename T>
+class threadsafe_stack
+{
+public:
+  threadsafe_stack();
+  threadsafe_stack(const threadsafe_stack&);
+  threadsafe_stack& operator=(const threadsafe_stack&) = delete;
+
+  void push(T);
+  std::shared_ptr<T> pop();
+  void pop(T&);
+  bool empty() const;
+};
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+对于上面的代码，消减接口可以获得最大程序的安全，甚至限制对栈的一些操作，比如上面这个栈是不能直接赋值的。简化接口更有利于数据控制，可以保证互斥量将一个操作完全锁住。
+
+一个简单的实现线程安全的堆栈，如下：
+
+```
+// 03_05.cpp
+#include <exception>
+#include <memory>
+#include <mutex>
+#include <stack>
+
+struct empty_stack : std::exception
+{
+  const char *what() const throw()
+  {
+    return "empty stack!";
+  }
+};
+
+template<typename T>
+class threadsafe_stack
+{
+private:
+  std::stack<T> data;
+  mutable std::mutex m;
+
+public:
+  threadsafe_stack()
+    : data(std::stack<int>())
+  {}
+
+  threadsafe_stack(const threadsafe_stack& rhs)
+  {
+    std::lock_guard<std::mutex> lock(rhs.m); // m is private
+    data = rhs.data;
+  }
+
+  threadsafe_stack& operator=(const threadsafe_stack&) = delete;
+
+  void push(T new_value)
+  {
+    std::lock_guard<std::mutex> lock(m);
+    data.push(new_value);
+  }
+
+  std::shared_ptr<T> pop()
+  {
+    std::lock_guard<std::mutex> lock(m);
+    if (data.empty()) {
+      throw empty_stack();
+    }
+
+    std::shared_ptr<T> const res(std::make_shared<T>(data.top()));
+    data.pop();
+    return res;
+  }
+
+  void pop(T& value)
+  {
+    std::lock_guard<std::mutex> lock(m);
+    if (data.empty()) {
+      throw empty_stack();
+    }
+
+    value = data.top();
+    data.pop();
+  }
+
+  bool empty() const
+  {
+    std::lock_guard<std::mutex> lock(m);
+    return data.empty();
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  threadsafe_stack<int> s1;
+  threadsafe_stack<int> s2(s1);
+
+  return 0;
+}
+```
+
+堆栈可以拷贝，拷贝构造函数对互斥量上锁，再拷贝堆栈。`data = rhs.data;`使用互斥量来确保复制结果的正确性，**这样的方式比成员初始化列表好**。
+
+同时需要注意的是**拷贝构造函数中直接调用了私有成员变量`m`，而且居然编译没有出错，后来发现是`mutable`关键字的原因**。
