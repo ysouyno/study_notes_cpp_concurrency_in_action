@@ -28,18 +28,26 @@
     - [第2章 线程管理（四）](#第2章-线程管理四)
         - [转移线程所有权（二）](#转移线程所有权二)
         - [运行时决定线程数量](#运行时决定线程数量)
-        - [识别线程（略）](#识别线程略)
-        - [总结（略）](#总结略)
+        - [识别线程](#识别线程)
+        - [总结](#总结)
 - [<2019-03-26 周二> 《C++并发编程实战》读书笔记（六）](#2019-03-26-周二-c并发编程实战读书笔记六)
     - [第3章 线程间共享数据（一）](#第3章-线程间共享数据一)
-        - [使用互斥量保护共享数据](#使用互斥量保护共享数据)
+        - [使用互斥量保护共享数据（一）](#使用互斥量保护共享数据一)
             - [C++中使用互斥量](#c中使用互斥量)
             - [精心组织代码来保护共享数据](#精心组织代码来保护共享数据)
             - [发现接口内在的条件竞争](#发现接口内在的条件竞争)
-                - [选项1-传入一个引用](#选项1-传入一个引用)
-                - [选项2-无异常抛出的拷贝构造函数或移动构造函数](#选项2-无异常抛出的拷贝构造函数或移动构造函数)
-                - [选项3-返回指向弹出值的指针](#选项3-返回指向弹出值的指针)
-                - [选项4-“选项1和2”或“选项1和3”](#选项4-选项1和2或选项1和3)
+                - [选项1 传入一个引用](#选项1-传入一个引用)
+                - [选项2 无异常抛出的拷贝构造函数或移动构造函数](#选项2-无异常抛出的拷贝构造函数或移动构造函数)
+                - [选项3 返回指向弹出值的指针](#选项3-返回指向弹出值的指针)
+                - [选项4 “选项1和2”或“选项1和3”](#选项4-选项1和2或选项1和3)
+- [<2019-03-27 周三> 《C++并发编程实战》读书笔记（七）](#2019-03-27-周三-c并发编程实战读书笔记七)
+    - [第3章 线程间共享数据（二）](#第3章-线程间共享数据二)
+        - [使用互斥量保护共享数据（二）](#使用互斥量保护共享数据二)
+            - [死锁问题描述及解决方案](#死锁问题描述及解决方案)
+            - [避免死锁的进阶指导](#避免死锁的进阶指导)
+            - [不同域中互斥量所有权的传递](#不同域中互斥量所有权的传递)
+            - [锁的粒度](#锁的粒度)
+        - [保护共享数据的替代设施](#保护共享数据的替代设施)
 
 <!-- markdown-toc end -->
 
@@ -1469,15 +1477,19 @@ sum: 5050
 
 书中所言：结束这个例子之前，需要明确：`T`类型的加法运算不满足结合律（比如，对于`float`型或`double`型，在进行加法操作之时，系统很可能会做截断操作），因为对范围中元素的分组，会导致`parallel_accumulate`得到的结果可能与`std::accumulate`得到的结果不同。同样的，这里对迭代器的要求更加严格：必须都是向前迭代器（forward iterator），而`std::accumulate`可以在只传入迭代器（input iterator）的情况下工作。对于创建出`result`容器，需要保证`T`有默认构造函数。对于算法并行，通常都要这样的修改；不过，需要根据算法本身的特性，选择不同的并行方式。需要注意：**因为不能直接从一个线程中返回一个值，所以需要传递`result`容器的引用到线程中去。另一个办法，通过地址来获取线程执行结果；第4章中，我们将使用（futures）完成这种方案**。
 
-### 识别线程（略）
+### 识别线程
 
-### 总结（略）
+略
+
+### 总结
+
+略
 
 # <2019-03-26 周二> 《C++并发编程实战》读书笔记（六）
 
 ## 第3章 线程间共享数据（一）
 
-### 使用互斥量保护共享数据
+### 使用互斥量保护共享数据（一）
 
 #### C++中使用互斥量
 
@@ -1654,26 +1666,26 @@ int main(int argc, char *argv[])
 
 原书中：说一些大家没有意识到的问题。这个问题概述为在`pop()`时，当拷贝数据的时候抛出一个异常，这时要弹出的数据将会丢失，它的确从栈上移出了，但是拷贝失败了。`std::stack`的设计人员将这个操作分为两部分：先获取顶部元素（top()），然后从栈中移除（pop()）。这样，在不能安全的将元素拷贝出去的情况下，栈中的这个元素还依旧存在，没有丢失。**不幸的是，这样的分割却制造了本想避免或消除的条件竞争**（这里没看懂，这样的分割是怎么制造了条件竞争？）。幸运的是，我们还有别的选项，但是这些选项是要付出代价的。
 
-##### 选项1-传入一个引用
+##### 选项1 传入一个引用
 
-``**
+```
 std::vector<int> result;
 some_stack.pop(result);
-`****
+```
 
 大多数情况下，这种方式还不错，但有明显的缺点：需要临时构造出一个堆中类型的实例，用于接收目标值。对于一些类型，这样做是不现实的，因为临时构造一个实例，从时间和资源的角度来看都是不划算的。对于其他的类型，这样也不总能行得通，因为构造函数要是需要一些参数呢！最后，需要可赋值的存储类型，这是一个重大的限制：即使支持移动构造，甚至是拷贝构造（从而允许返回一个值），很多用户自定义类型可能都不支持赋值操作。
 
-##### 选项2-无异常抛出的拷贝构造函数或移动构造函数
+##### 选项2 无异常抛出的拷贝构造函数或移动构造函数
 
 对于有返回值的`pop(**`函数来说，只有“异常安全”方面的担忧（当返回值时可以抛出一个异常），（就像上面说的那样，弹出的数据拷贝失败了，但它也从栈上移出了）。很多类型都有拷贝构造函数，它们不会抛出异常。一个有用的选项可以限制对线程安全的栈的使用，并且能 让栈安全的返回所需的值，而不会抛出异常。
 
 虽然安全，但非可靠。尽管能在编译时，使用`std::is_nothrow_copy_constructible`和`std::is_nothrow_move_constructible`类型特征，让拷贝或移动构造函数不抛出异常，但是这种方式的局限性太强。因为有很多的用户定义类型有可抛出异常的拷贝构造函数，没有移动构造函数；或是，都不抛出异常的构造函数。如果类型不能存储线程安全的堆栈，想想该是多么的不幸。
 
-##### 选项3-返回指向弹出值的指针
+##### 选项3 返回指向弹出值的指针
 
 第三个选择是返回一个指向弹出的元素的指针，而不是直接返回值。**指针的优势是自由拷贝，并且不会产生异常**，（原来指针的优势是不会产生异常）。缺点就是返回一个指针需要对对象的内存分配进行管理，对于简单数据类型（比如：`int`），内存管理的开销远大于直接返回值（这种标准类型就直接返回值最好，不要使用指针啦）。对于选择这个方案的接口，使用`std::shared_ptr`是个不错的选择，避免内存泄露，而且标准库能够完全控制内存分配方案。这种优化是很重要的：因为堆栈中的每个对象，都需要`new`进行独立内存分配，相较于非线程安全版本，这个方案的开销相当大。
 
-##### 选项4-“选项1和2”或“选项1和3”
+##### 选项4 “选项1和2”或“选项1和3”
 
 对于通用的代码来说，灵活性不应忽视。当你已经选择了选项2或3时，再去选择1也是很容易的。这些选项提供给用户，让用户自己选择对于他们自己来说最合适最经刘的方案。
 
@@ -1795,4 +1807,301 @@ int main(int argc, char *argv[])
 
 堆栈可以拷贝，拷贝构造函数对互斥量上锁，再拷贝堆栈。`data = rhs.data;`使用互斥量来确保复制结果的正确性，**这样的方式比成员初始化列表好**。
 
-同时需要注意的是**拷贝构造函数中直接调用了私有成员变量`m`，而且居然编译没有出错，后来发现是`mutable`关键字的原因**。
+同时需要注意的是拷贝构造函数中直接调用了私有成员变量`m`，而且居然编译没有出错？这里编译是不会出错的，我只能这么理解：因为它的调用是在类的内部，所以它可以访问私有成员变量`m`，虽然是通过形参的方式。在编程题里也遇到过这种写法，只是当时没有注意而已，见：[dyn_array_demo](https://github.com/ysouyno/dyn_array_demo)
+
+# <2019-03-27 周三> 《C++并发编程实战》读书笔记（七）
+
+## 第3章 线程间共享数据（二）
+
+### 使用互斥量保护共享数据（二）
+
+#### 死锁问题描述及解决方案
+
+避免死锁的一般建议，就是让两个互斥量总以相同的顺序上锁：总在互斥量B之前锁住互斥量A，就永远不会死锁。某些情况下是可以这样用，因为不同的互斥量用于不同的地方。不过，事情没那么简单，比如：当有多个互斥量保护同一个类的独立实例时，一个操作对同一个类的两个不同实例进行<u>数据的交换操作</u>，为了保证数据交换操作的正确性，就要避免数据被并发修改，并确保每个实例上的互斥量都能锁住自己要保护的区域。不过，选择一个固定的顺序（例如，实例提供的第一互斥量作为第一个参数，提供的第二个互斥量为第二个参数），可能会适得其反：在参数交换了之后，两个线程试图在相同的两个实例间进行数据交换时，程序又死锁了！
+
+很幸运，C++标准库有办法解决这个问题，`std::lock`可以一次性锁住多个（两个以上）的互斥量，并且没有副作用（死锁风险）。来看一下下面的代码是怎么在一个简单的交换操作中使用`std::lock`。
+
+```
+// 03_06.cpp
+#include <iostream>
+#include <mutex>
+
+class some_big_object
+{
+public:
+  some_big_object();
+};
+
+void swap(some_big_object& lhs, some_big_object& rhs)
+{}
+
+class X
+{
+private:
+  some_big_object some_detail;
+  std::mutex m;
+
+public:
+  X(const some_big_object& sd) : some_detail(sd) {}
+
+  friend void swap(X& lhs, X& rhs)
+  {
+    if (&lhs == &rhs) {
+      return;
+    }
+
+    std::lock(lhs.m, rhs.m);
+    std::lock_guard<std::mutex> lock_a(lhs.m, std::adopt_lock);
+    std::lock_guard<std::mutex> lock_b(rhs.m, std::adopt_lock);
+
+    swap(lhs.some_detail, rhs.some_detail);
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+这样就能保证在大多数情况下，函数退出时互斥量能被正确的解锁（保护操作可能会抛出一个异常），也允许使用一个简单的`return`作为返回。**`std::lock`要么将两个锁都锁住，要不一个都不锁**。
+
+#### 避免死锁的进阶指导
+
+那么多建议见原书，下面代码是通过层次锁来避免死锁。
+
+```
+// 03_07.cpp
+#include <iostream>
+#include <mutex>
+#include <climits>
+
+class hierarchical_mutex
+{
+  std::mutex internal_mutex;
+
+  const unsigned long hierarchy_value;
+  unsigned long previous_hierarchy_value;
+
+  static thread_local unsigned long this_thread_hierarchy_value;
+
+  void check_for_hierarchy_violation()
+  {
+    if (this_thread_hierarchy_value <= hierarchy_value) {
+      throw std::logic_error("mutex hierarchy violated");
+    }
+  }
+
+  void update_hierarchy_value()
+  {
+    previous_hierarchy_value = this_thread_hierarchy_value;
+    this_thread_hierarchy_value = hierarchy_value;
+  }
+
+public:
+  explicit hierarchical_mutex(unsigned long value)
+    : hierarchy_value(value)
+    , previous_hierarchy_value(0)
+  {}
+
+  void lock()
+  {
+    check_for_hierarchy_violation();
+    internal_mutex.lock();
+    update_hierarchy_value();
+  }
+
+  void unlock()
+  {
+    this_thread_hierarchy_value = previous_hierarchy_value;
+    internal_mutex.unlock();
+  }
+
+  bool try_lock()
+  {
+    check_for_hierarchy_violation();
+
+    if (!internal_mutex.try_lock()) {
+      return false;
+    }
+
+    update_hierarchy_value();
+    return true;
+  }
+};
+
+thread_local unsigned long
+hierarchical_mutex::this_thread_hierarchy_value(ULONG_MAX);
+
+hierarchical_mutex high_level_mutex(10000);
+hierarchical_mutex low_level_mutex(5000);
+
+int low_level_stuff()
+{
+  std::cout << "low_level_stuff()" << std::endl;
+  return 2;
+}
+
+int low_level_func()
+{
+  std::lock_guard<hierarchical_mutex> lk(low_level_mutex);
+  return low_level_stuff();
+}
+
+void high_level_stuff(int some_param)
+{
+  std::cout << "high_level_stuff(" << some_param << ")" << std::endl;
+}
+
+void hight_level_func()
+{
+  std::lock_guard<hierarchical_mutex> lk(high_level_mutex);
+  high_level_stuff(low_level_func());
+}
+
+void thread_a()
+{
+  hight_level_func();
+}
+
+hierarchical_mutex other_mutex(100);
+
+void other_level_stuff()
+{
+  std::cout << "other_level_stuff()" << std::endl;
+}
+
+void other_level_func()
+{
+  hight_level_func();
+  other_level_stuff();
+}
+
+void thread_b()
+{
+  std::lock_guard<hierarchical_mutex> lk(other_mutex);
+  other_level_func();
+}
+
+int main(int argc, char *argv[])
+{
+  thread_a();
+  thread_b();
+
+  return 0;
+}
+```
+```
+// output
+% ./03_07
+low_level_stuff()
+high_level_stuff(2)
+terminate called after throwing an instance of 'std::logic_error'
+  what():  mutex hierarchy violated
+[1]    8278 abort (core dumped)  ./03_07
+```
+
+这里重点是使用了`thread_local`的值来代表当前线程的层级值：`this_thread_hierarchy_value`。它被初始化为最大值，所以最初所有线程都能被锁住。因为其声明中有`thread_local`，所以**每个线程都有其拷贝副本**，这样**线程中变量状态完全独立，当从另一个线程进行读取时，变量的状态也完全独立**。
+
+这里有一个问题：<u>类的`static`变量不属于类而`thread_local`又是线程局部变量，那么上述代码中的`static thread_local unsigned long this_thread_hierarchy_value;`这种用法应该怎么理解呢？</u>
+
+#### 不同域中互斥量所有权的传递
+
+补全书中代码，用于理解书中所说的：一种使用可能是允许一个函数去锁住一个互斥量，并且将所有权移到调用者上，所以调用者可以在这个锁保护的范围内执行额外的动作。
+
+```
+// 03_else_01.cpp
+#include <iostream>
+#include <mutex>
+
+std::mutex some_mutex;
+
+void prepare_data()
+{
+  std::cout << "prepare_data()" << std::endl;
+}
+
+void do_something()
+{
+  std::cout << "do_something()" << std::endl;
+}
+
+std::unique_lock<std::mutex> get_lock()
+{
+  extern std::mutex some_mutex;
+  std::unique_lock<std::mutex> lk(some_mutex);
+  prepare_data();
+  return lk;
+}
+
+void process_data()
+{
+  std::unique_lock<std::mutex> lk(get_lock());
+  do_something();
+}
+
+int main(int argc, char *argv[])
+{
+  process_data();
+
+  return 0;
+}
+```
+```
+// output
+% ./03_else_01 
+prepare_data()
+do_something()
+```
+
+`process_data()`函数直接转移`std::unique_lock`实例的所有权，调用`do_something()`可使用的正确数据（数据没有受到其他线程的修改）。**`std::unique_lock`是可移动，但不可赋值的类型**。
+
+`std::unique_lock`的灵活性同样也允许实例在销毁之前放弃其拥有的锁。这对于应用性能来说很重要，因为持有锁的时间增加会导致性能下降，其他线程会等待这个锁的释放，避免超越操作。
+
+#### 锁的粒度
+
+```
+// 03_08.cpp
+#include <mutex>
+
+class Y
+{
+private:
+  int some_detail;
+  mutable std::mutex m;
+
+  int get_detail() const
+  {
+    std::lock_guard<std::mutex> lock_a(m);
+    return some_detail;
+  }
+
+public:
+  Y(int sd) : some_detail(sd) {}
+
+  friend bool operator==(const Y& lhs, const Y& rhs)
+  {
+    if (&lhs == &rhs) {
+      return true;
+    }
+
+    const int lhs_value = lhs.get_detail();
+    const int rhs_value = rhs.get_detail();
+
+    return lhs_value == rhs_value;
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+在这个例子中，比较操作符首先通过调用`get_detail()`成员函数检索要比较的值，函数在索引值时被一个锁保护着。比较操作符会在之后比较索引出来的值。注意：虽然这样能减少锁持有的时间，一个锁只持有一次（这样能消除死锁的可能性），这里有一个**微妙的语义操作同时对两个锁住的值进行比较**，当操作符返回`true`时，那就意味着在这个时间点上的`lhs.some_detail`与在另一个时间点的`rhs.some_detail`相同。这两个值在读取之后，可能会被任意的方式所修改；两个值会进行交换，**这样就会失去比较的意义**。
+
+有时，只是没有一个合适粒度级别，因为并不是所有对数据结构的访问都需要同一级的保护。这个例子中，就需要寻找一个合适的机制，去替换`std::mutex`。
+
+### 保护共享数据的替代设施
+
+略
