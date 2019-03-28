@@ -48,6 +48,17 @@
             - [不同域中互斥量所有权的传递](#不同域中互斥量所有权的传递)
             - [锁的粒度](#锁的粒度)
         - [保护共享数据的替代设施](#保护共享数据的替代设施)
+- [<2019-03-28 周四> 《C++并发编程实战》读书笔记（八）](#2019-03-28-周四-c并发编程实战读书笔记八)
+    - [第4章 同步并发操作（一）](#第4章-同步并发操作一)
+        - [等待一个事件或其他条件](#等待一个事件或其他条件)
+            - [等待条件达成](#等待条件达成)
+            - [使用条件变量构建线程安全队列](#使用条件变量构建线程安全队列)
+        - [使用期望等待一次性事件](#使用期望等待一次性事件)
+            - [带返回值的后台任务](#带返回值的后台任务)
+            - [任务与期望](#任务与期望)
+            - [使用`std::promises`](#使用stdpromises)
+            - [为“期望”存储“异常”](#为期望存储异常)
+            - [多个线程的等待](#多个线程的等待)
 
 <!-- markdown-toc end -->
 
@@ -2049,7 +2060,7 @@ int main(int argc, char *argv[])
 ```
 ```
 // output
-% ./03_else_01 
+% ./03_else_01
 prepare_data()
 do_something()
 ```
@@ -2105,3 +2116,535 @@ int main(int argc, char *argv[])
 ### 保护共享数据的替代设施
 
 略
+
+# <2019-03-28 周四> 《C++并发编程实战》读书笔记（八）
+
+## 第4章 同步并发操作（一）
+
+### 等待一个事件或其他条件
+
+#### 等待条件达成
+
+C++标准库对条件变量有两套实现：`std::condition_variable`和`std::condition_variable_any`。前者仅限于与`std::mutex`一起工作，而后者可以和任何满足最低标准的互斥量一起工作，从而加上了`_any`的后缀。因为`std::condition_variable_any`更加通用，这就可能从体积、性能，以及系统资源的使用方面产生额外的开销，所以`std::condition_variable`一般作为首选的类型，当对灵活性有硬性要求时，我们才会去考虑`std::condition_variable_any`。
+
+下面代码使用`std::condition_variable`处理数据等待，补全书中代码如下：
+
+```
+// 04_01.cpp
+#include <iostream>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <thread>
+#include <unistd.h>
+
+typedef int data_chunk;
+const data_chunk MAX_DATA = 9;
+
+std::mutex mut;
+std::queue<data_chunk> data_queue;
+std::condition_variable data_cond;
+
+bool more_data_to_prepare()
+{
+  static int i = 0;
+  usleep(500000);
+
+  if (i++ == MAX_DATA) {
+    return false;
+  }
+
+  return true;
+}
+
+data_chunk prepare_data()
+{
+  static data_chunk d = 0;
+  return ++d;
+}
+
+void process(data_chunk data)
+{
+  std::cout << "process(" << data << ")" << std::endl;
+}
+
+bool is_last_chunk(data_chunk data)
+{
+  if (data == MAX_DATA) {
+    return true;
+  }
+
+  return false;
+}
+
+void data_preparation_thread()
+{
+  while (more_data_to_prepare()) {
+    const data_chunk data = prepare_data();
+    std::lock_guard<std::mutex> lk(mut);
+    data_queue.push(data);
+    data_cond.notify_one();
+  }
+}
+
+void data_processing_thread()
+{
+  while (true) {
+    std::unique_lock<std::mutex> lk(mut);
+    data_cond.wait(lk, []{return !data_queue.empty();});
+    data_chunk data = data_queue.front();
+    data_queue.pop();
+    lk.unlock();
+    process(data);
+    if (is_last_chunk(data)) {
+      break;
+    }
+  }
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t1(data_preparation_thread);
+  std::thread t2(data_processing_thread);
+
+  t1.join();
+  t2.join();
+
+  return 0;
+}
+```
+```
+// output
+% ./04_01
+process(1)
+process(2)
+process(3)
+process(4)
+process(5)
+process(6)
+process(7)
+process(8)
+process(9)
+```
+
+这里需要理解`wait()`和行为，我觉得很重要。`wait()`会去检查这些条件（通过调用所提供的`lambda`函数），当条件满足（`lambda`函数返回`true`）时返回。如果条件不满足（`lambda`函数返回`false`），`wait()`函数将**解锁互斥量**，并且将这个线程（上段提到的处理数据的线程）置于阻塞或等待状态。当准备数据的线程调用`notify_one()`通知条件变量时，处理数据的线程从睡眠状态中苏醒，**重新获取互斥锁**，并且**对条件再次检查**，在条件满足的情况下，从`wait()`返回**并继续持有锁**。当条件不满足时，线程将对**互斥量解锁**，并且**重新开始等待**。
+
+自己的理解：如果条件不满足的情况下，即数据为空，`wait()`函数会解锁互斥量，并阻塞线程，当`notify_one()`通知时，则线程从睡眠中醒来，重新获得互斥锁，并检查条件，条件满足时，此时`wait()`函数返回继续执行下面的代码，返回的`wait()`函数是持有互斥锁的，条件不满足时，线程解锁互斥量并重新开始等待。
+
+关于上面的代码为什么`std::unique_lock`要比`std::lock_guard`更合适呢？因为等待中的线程必须在等待期间解锁互斥量，并在这之后对互斥量再次上锁，而`std::lock_guard`没有这么灵活，因为他没办法调用`unlock()`函数。如果互斥量在线程休眠期间保持锁住状态，准备数据的线程将无法锁住互斥量，也无法添加数据到队列中；同样的，等待线程也永远不会知道条件何时满足。
+
+在调用`wait()`的过程中，一个条件变量可能会去检查给定条件若干次；然而，它总是在互斥量被锁定时这样做，当且仅当提供测试条件的函数返回`true`时，它就会立即返回。
+
+#### 使用条件变量构建线程安全队列
+
+使用条件变量的线程安全队列（完整版）：
+
+```
+// 04_02.cpp
+#include <queue>
+#include <memory>
+#include <mutex>
+#include <condition_variable>
+
+template<typename T>
+class threadsafe_queue
+{
+private:
+  mutable std::mutex mut;
+  std::queue<T> data_queue;
+  std::condition_variable data_cond;
+
+public:
+  threadsafe_queue() {}
+
+  threadsafe_queue(const threadsafe_queue &other)
+  {
+    std::lock_guard<std::mutex> lk(other.mut);
+    data_queue = other.data_queue;
+  }
+
+  void push(T new_value)
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    data_queue.push(new_value);
+    data_cond.notify_one();
+  }
+
+  void wait_and_pop(T& value)
+  {
+    std::unique_lock<std::mutex> lk(mut);
+    data_cond.wait(lk, [this]{return !data_queue.empty();});
+    value = data_queue.front();
+    data_queue.pop();
+  }
+
+  std::shared_ptr<T> wait_and_pop()
+  {
+    std::unique_lock<std::mutex> lk(mut);
+    data_cond.wait(lk, [this]{return !data_queue.empty();});
+    std::shared_ptr<T> res(std::make_shared<T>(data_queue.front()));
+    data_queue.pop();
+    return res;
+  }
+
+  bool try_pop(T& value)
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    if (data_queue.empty()) {
+      return false;
+    }
+
+    value = data_queue.front();
+    data_queue.pop();
+    return true;
+  }
+
+  std::shared_ptr<T> try_pop()
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    if (data_queue.empty()) {
+      return std::shared_ptr<T>();
+    }
+
+    std::shared_ptr<T> res(std::make_shared<T>(data_queue.front()));
+    data_queue.pop();
+    return res;
+  }
+
+  bool empty() const
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    return data_queue.empty();
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+代码抄完啦，但是我不知道如何使用及测试，这是个大问题呀。
+
+这是为什么要加`mutable`关键字的原因吗？<u>如果锁住互斥量是一个可变操作，那么这个互斥量对象就会被标记为可变的，之后可以在`empty()`和拷贝构造函数中上锁了</u>。哦，写到这里我想起来了，因为`empty()`和拷贝构造函数都存在`const`修饰，它们内部不能修改任何类的成员变量，所以要加上`mutable`关键字。
+
+### 使用期望等待一次性事件
+
+#### 带返回值的后台任务
+
+使用`std::future`从异步任务中获取返回值。如下：
+
+```
+// 04_03.cpp
+#include <iostream>
+#include <future>
+#include <unistd.h>
+
+int find_the_answer_to_ltuae()
+{
+  std::cout << "find_the_answer_to_ltuae()" << std::endl;
+  sleep(1);
+  return 1;
+}
+
+void do_other_stuff()
+{
+  std::cout << "do_other_stuff()" << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  std::future<int> the_answer = std::async(find_the_answer_to_ltuae);
+  do_other_stuff();
+  std::cout << "the answer is " << the_answer.get() << std::endl;
+
+  return 0;
+}
+```
+```
+// output
+% ./04_03
+do_other_stuff()
+the answer is find_the_answer_to_ltuae()
+1
+```
+
+使用`std::async`向函数传递参数。如下：
+
+```
+// 04_04.cpp
+#include <iostream>
+#include <string>
+#include <future>
+
+struct X
+{
+  void foo(int i, const std::string &s)
+  {
+    std::cout << "foo(" << i << ", " << s << ")" << std::endl;
+  }
+
+  std::string bar(const std::string &s)
+  {
+    std::cout << "bar(" << s << ")" << std::endl;
+    return s;
+  }
+};
+
+struct Y
+{
+  double operator()(double d)
+  {
+    std::cout << "Y(" << d << ")" << std::endl;
+    return d;
+  }
+};
+
+X baz(X& x)
+{
+  std::cout << "baz(x)" << std::endl;
+  return x;
+}
+
+class move_only
+{
+public:
+  move_only()
+  {
+    std::cout << "move_only constructor" << std::endl;
+  }
+
+  move_only(move_only&&) {}
+
+  move_only(const move_only&) = delete;
+  move_only& operator=(move_only&&) = delete;
+  move_only& operator=(const move_only&) = delete;
+
+  void operator()()
+  {
+    std::cout << "move_only::operator()" << std::endl;
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  X x;
+  auto f1 = std::async(&X::foo, &x, 42, "hello");
+  auto f2 = std::async(&X::bar, x, "goodbye");
+
+  Y y;
+  auto f3 = std::async(Y(), 3.141);
+  auto f4 = std::async(std::ref(y), 2.718);
+
+  std::async(baz, std::ref(x));
+
+  auto f5 = std::async(move_only());
+
+  auto f6 = std::async(std::launch::async, Y(), 1.2);
+  auto f7 = std::async(std::launch::deferred, baz, std::ref(x));
+  auto f8 = std::async(std::launch::deferred | std::launch::async,
+                       baz, std::ref(x)
+                       );
+  auto f9 = std::async(baz, std::ref(x));
+
+  f7.wait();
+
+  return 0;
+}
+```
+```
+// output
+% ./04_04
+baz(x)
+move_only constructor
+baz(x)
+Y(3.141)
+Y(2.718)
+bar(goodbye)
+foo(42, hello)
+baz(x)
+baz(x)
+Y(1.2)
+move_only::operator()
+```
+
+上面代码的输出顺序不是相同的，可以多次运行程序看看。
+
+`std::launch::defered`，用来表明函数调用被延迟到`wait()`或`get()`函数调用时才执行，`std::launch::async`表明函数必须在其所在的独立线程上执行，`std::launch::deferred | std::launch::async`表明实现可以选择这两种方式的一种。最后一个选项是默认的。当函数调用被延迟，它可能不会再运行了。如下：
+
+```
+// 在新线程上执行
+auto f6 = std::async(std::launch::async, Y(), 1.2);
+
+// 在`wait()`或`get()`时执行
+auto f7 = std::async(std::launch::deferred, baz, std::ref(x));
+
+// 实现选择执行方式
+auto f8 = std::async(std::launch::deferred | std::launch::async,
+                     baz, std::ref(x)
+                     );
+
+auto f9 = std::async(baz, std::ref(x));
+
+// 调用延迟函数，如果没有这行代码，上面的将少一行输出
+f7.wait();
+```
+
+#### 任务与期望
+
+使用`std::packaged_task`执行一个图形界面线程，补全书中代码如下：
+
+```
+// 04_05.cpp
+#include <iostream>
+#include <deque>
+#include <mutex>
+#include <future>
+#include <thread>
+#include <utility>
+#include <unistd.h>
+
+std::mutex m;
+std::deque<std::packaged_task<void()> > tasks;
+
+bool gui_shutdown_message_received()
+{
+  static int i = 0;
+  usleep(500000);
+
+  if (i++ == 10) {
+    return true;
+  }
+
+  return false;
+}
+
+void get_and_process_gui_message()
+{
+  std::cout << "get_and_process_gui_message()" << std::endl;
+}
+
+void gui_thread()
+{
+  while (!gui_shutdown_message_received()) {
+    get_and_process_gui_message();
+    std::packaged_task<void()> task;
+    {
+      std::lock_guard<std::mutex> lk(m);
+      if (tasks.empty()) {
+        continue;
+      }
+
+      task = std::move(tasks.front());
+      tasks.pop_front();
+    }
+
+    task();
+  }
+}
+
+std::thread gui_bg_thread(gui_thread);
+
+void test_func1()
+{
+  std::cout << "test_func()1" << std::endl;
+}
+
+void test_func2()
+{
+  std::cout << "test_func()2" << std::endl;
+}
+
+template<typename Func>
+std::future<void> post_task_for_gui_thread(Func f)
+{
+  std::packaged_task<void()> task(f);
+  std::future<void> res = task.get_future();
+  std::lock_guard<std::mutex> lk(m);
+  tasks.push_back(std::move(task));
+  return res;
+}
+
+int main(int argc, char *argv[])
+{
+  post_task_for_gui_thread(test_func1);
+  post_task_for_gui_thread(test_func2);
+  gui_bg_thread.join();
+
+  return 0;
+}
+```
+```
+// output
+% ./04_05
+get_and_process_gui_message()
+test_func()1
+get_and_process_gui_message()
+test_func()2
+get_and_process_gui_message()
+get_and_process_gui_message()
+get_and_process_gui_message()
+get_and_process_gui_message()
+get_and_process_gui_message()
+get_and_process_gui_message()
+get_and_process_gui_message()
+get_and_process_gui_message()
+```
+
+这段代码确实很简单，但好像其中的深意我还不能体会出来，大概的意思是：他能在队列中提取出一个任务，然后释放队列上的锁（因为锁在`{}`中，所以退出时锁被释放），并且执行任务`task();`。这里，“期望”与任务相关，当任务执行完成时，其状态会被置为“就绪”状态。
+
+将一个任务传入队列也很简单：`std::packaged_task<void()> task(f);`可以提供一个打包好的任务，可以通过这个任务调用`task.get_future()`获取“期望”对象，**并且在任务被推入列表⑨之前，“期望”将返回调用函数**。当需要知道线程执行完任务时，向图形界面线程发布消息的代码，会等待“期望”改变状态；否则，则会丢弃这个“期望”。
+
+#### 使用`std::promises`
+
+略，书中代码缺太多，无法补全，只能看着伪代码自己理解。
+
+#### 为“期望”存储“异常”
+
+补全书中代码如下：
+
+```
+// 04_else_01.cpp
+#include <cmath>
+#include <stdexcept>
+#include <future>
+
+double square_root(double x)
+{
+  if (x < 0) {
+    throw std::out_of_range("x < 0");
+  }
+
+  return sqrt(x);
+}
+
+int main(int argc, char *argv[])
+{
+  // double y = square_root(-1);
+  std::future<double> f = std::async(square_root, -1);
+  double y = f.get();
+
+  return 0;
+}
+```
+```
+// output
+% ./04_else_01
+terminate called after throwing an instance of 'std::out_of_range'
+  what():  x < 0
+[1]    17601 abort (core dumped)  ./04_else_01
+```
+
+函数作为`std::async`的一部分时，当在调用时抛出一个异常，那么这个异常就会存储到“期望”的结果数据中，之后“期望”的状态被置为“就绪”，之后调用`get()`会抛出这个存储的异常。（注意：标准级别没有指定重新抛出的这个异常是原始的异常对象，还是一个拷贝；不同的编译器和库将会在这方面做出不同的选择）。当你将函数打包入`std::packaged_task`任务包中后，在这个任务被调用时，同样的事情也会发生；当打包函数抛出一个异常，这个异常将被存储在“期望”的结果中，准备在调用get()再次抛出。
+
+当然，通过函数的显式调用，`std::promise`也能提供同样的功能。当你希望存入的是一个异常而非一个数值时，你就需要调用`set_exception()`成员函数，而非`set_value()`。这通常是用在一个`catch`块中，并作为算法的一部分，为了捕获异常，使用异常填充“承诺”。
+
+直到现在，所有例子都在用`std::future`。不过，`std::future`也有局限性，在很多线程在等待的时候，只有一个线程能获取等待结果。当多个线程需要等待相同的事件的结果，你就需要使用`std::shared_future`来替代`std::future`了。
+
+#### 多个线程的等待
+
+这个说得比较好：虽然`std::future`可以处理所有在线程间数据转移的必要同步，但是调用某一特殊`std::future`对象的成员函数，就会让这个线程的数据和其他**相同等待**线程的数据不同步。当多线程在没有额外同步的情况下，访问一个独立的`std::future`对象时，就会有数据竞争和未定义的行为。这是因为：`std::future`模型独享同步结果的所有权，并且通过调用`get()`函数，一次性的获取数据，这就让并发访问变的毫无意义——只有一个线程可以获取结果值，因为在第一次调用`get()`后，就没有值可以再获取了。
+
+如果你的并行代码没有办法让多个线程等待同一个事件，先别太失落；`std::shared_future`可以来帮你解决。因为`std::future`是只移动的，所以其所有权可以在不同的实例中互相传递，但是只有一个实例可以获得特定的同步结果；而`std::shared_future`实例是可拷贝的，所以多个对象可以引用同一关联“期望”的结果。
+
+在每一个`std::shared_future`的独立对象上成员函数调用返回的结果还是不同步的，所以为了在多个线程访问一个独立对象时，避免数据竞争，必须使用锁来对访问进行保护。
