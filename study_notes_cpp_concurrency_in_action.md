@@ -59,6 +59,13 @@
             - [使用`std::promises`](#使用stdpromises)
             - [为“期望”存储“异常”](#为期望存储异常)
             - [多个线程的等待](#多个线程的等待)
+- [<2019-03-29 周五> 《C++并发编程实战》读书笔记（九）](#2019-03-29-周五-c并发编程实战读书笔记九)
+    - [第4章 同步并发操作（二）](#第4章-同步并发操作二)
+        - [限定等待时间](#限定等待时间)
+        - [使用同步操作简化代码](#使用同步操作简化代码)
+            - [使用“期望”的函数化编程](#使用期望的函数化编程)
+            - [使用消息传递的同步操作](#使用消息传递的同步操作)
+        - [总结](#总结-1)
 
 <!-- markdown-toc end -->
 
@@ -2593,7 +2600,7 @@ get_and_process_gui_message()
 
 这段代码确实很简单，但好像其中的深意我还不能体会出来，大概的意思是：他能在队列中提取出一个任务，然后释放队列上的锁（因为锁在`{}`中，所以退出时锁被释放），并且执行任务`task();`。这里，“期望”与任务相关，当任务执行完成时，其状态会被置为“就绪”状态。
 
-将一个任务传入队列也很简单：`std::packaged_task<void()> task(f);`可以提供一个打包好的任务，可以通过这个任务调用`task.get_future()`获取“期望”对象，**并且在任务被推入列表⑨之前，“期望”将返回调用函数**。当需要知道线程执行完任务时，向图形界面线程发布消息的代码，会等待“期望”改变状态；否则，则会丢弃这个“期望”。
+将一个任务传入队列也很简单：`std::packaged_task<void()> task(f);`可以提供一个打包好的任务，可以通过这个任务调用`task.get_future()`获取“期望”对象，**并且在任务被推入列表之前，“期望”将返回调用函数**。当需要知道线程执行完任务时，向图形界面线程发布消息的代码，会等待“期望”改变状态；否则，则会丢弃这个“期望”。
 
 #### 使用`std::promises`
 
@@ -2648,3 +2655,279 @@ terminate called after throwing an instance of 'std::out_of_range'
 如果你的并行代码没有办法让多个线程等待同一个事件，先别太失落；`std::shared_future`可以来帮你解决。因为`std::future`是只移动的，所以其所有权可以在不同的实例中互相传递，但是只有一个实例可以获得特定的同步结果；而`std::shared_future`实例是可拷贝的，所以多个对象可以引用同一关联“期望”的结果。
 
 在每一个`std::shared_future`的独立对象上成员函数调用返回的结果还是不同步的，所以为了在多个线程访问一个独立对象时，避免数据竞争，必须使用锁来对访问进行保护。
+
+# <2019-03-29 周五> 《C++并发编程实战》读书笔记（九）
+
+## 第4章 同步并发操作（二）
+
+### 限定等待时间
+
+略
+
+### 使用同步操作简化代码
+
+#### 使用“期望”的函数化编程
+
+函数不会改变任何外部状态，这个函数是纯粹函数，那些非纯粹的函数是要对共享数据进行修改的。
+
+一个“期望”对象可以在线程间互相传递，并允许其中一个计算结果依赖于另外一个的结果，而非对共享数据的显式访问。
+
+快速排序（顺序实现版），补全书中代码如下：
+
+```
+// 04_06.cpp
+#include <iostream>
+#include <list>
+#include <algorithm>
+
+template<typename T>
+std::list<T> sequential_quick_sort(std::list<T> input)
+{
+  if (input.empty()) {
+    return input;
+  }
+
+  std::list<T> result;
+  result.splice(result.begin(), input, input.begin());
+  const T& pivot = *result.begin();
+
+  auto divide_point = std::partition(input.begin(),
+                                     input.end(),
+                                     [&](const T& t){return t < pivot;}
+                                     );
+
+  std::list<T> lower_part;
+  lower_part.splice(lower_part.end(),
+                    input,
+                    input.begin(),
+                    divide_point
+                    );
+
+  auto new_lower(sequential_quick_sort(std::move(lower_part)));
+  auto new_higher(sequential_quick_sort(std::move(input)));
+
+  result.splice(result.end(), new_higher);
+  result.splice(result.begin(), new_lower);
+
+  return result;
+}
+
+int main(int argc, char *argv[])
+{
+  std::list<int> list_int {3, 2, 1, 4, 5};
+  std::list<int> result = sequential_quick_sort(list_int);
+
+  for (std::list<int>::iterator it = result.begin();
+       it != result.end();
+       ++it) {
+    std::cout << *it << std::endl;
+  }
+
+  return 0;
+}
+```
+```
+// output
+% ./04_06
+1
+2
+3
+4
+5
+```
+
+虽然接口的形式是FP模式的，但当你使用FP模式时，你需要做大量的拷贝操作，所以在内部你会使用“普通”的命令模式。这里使用了一个引用`const T& pivot = *result.begin();`，为了避免过多的拷贝。同时lambda表达式也是使用引用的方式传递以避免对“中间”值的拷贝。
+
+因为还是使用函数化模式，所以使用“期望”很容易将其转化为并行的版本，如下面的程序清单所示。其中的操作与前面相同，不同的是它们现在并行运行。
+
+```
+// 04_07.cpp
+#include <iostream>
+#include <list>
+#include <algorithm>
+#include <future>
+
+template<typename T>
+std::list<T> parallel_quick_sort(std::list<T> input)
+{
+  if (input.empty()) {
+    return input;
+  }
+
+  std::list<T> result;
+  result.splice(result.begin(), input, input.begin());
+  const T& pivot = *result.begin();
+
+  auto divide_point = std::partition(input.begin(),
+                                     input.end(),
+                                     [&](const T& t){return t < pivot;}
+                                     );
+
+  std::list<T> lower_part;
+  lower_part.splice(lower_part.end(),
+                    input,
+                    input.begin(),
+                    divide_point
+                    );
+
+  std::future<std::list<T> > new_lower(std::async(
+                                                  &parallel_quick_sort<T>,
+                                                  std::move(lower_part)
+                                                  )
+                                       );
+
+  auto new_higher(parallel_quick_sort(std::move(input)));
+
+  result.splice(result.end(), new_higher);
+  result.splice(result.begin(), new_lower.get());
+
+  return result;
+}
+
+int main(int argc, char *argv[])
+{
+  std::list<int> list_int {3, 2, 1, 4, 5};
+  std::list<int> result = parallel_quick_sort(list_int);
+
+  for (std::list<int>::iterator it = result.begin();
+       it != result.end();
+       ++it) {
+    std::cout << *it << std::endl;
+  }
+
+  return 0;
+}
+```
+```
+// output
+% ./04_07
+1
+2
+3
+4
+5
+```
+
+上面的代码通过递归调用`parallel_quick_sort()`，你就可以利用可用的硬件并发了。`std::async()`会启动一个新线程，这样当你递归三次时，就会有八个线程在运行了。当任务过多时（已影响性能），__这些任务应该在使用`get()`函数获取的线程上运行，而不是在新线程上运行，这样就能避免任务向线程传递的开销__。值的注意的是，这完全符合`std::async`的实现，为每一个任务启动一个线程（甚至在任务超额时，在`std::launch::deferred`没有明确规定的情况下）；或为了同步执行所有任务（在`std::launch::async`有明确规定的情况下）。当你依赖运行库的自动缩放，建议你去查看一下你的实现文档，了解一下将会有怎么样的行为表现。
+
+比起使用`std::async()`，你可以写一个`spawn_task()`函数对`std::packaged_task`和`std::thread`做简单的包装，如下的代码所示，你需要为函数结果创建一个`std::packaged_task`对象，可以从这个对象中获取“期望”，或在线程中执行它，返回“期望”。其本身并不提供太多的好处（并且事实上会造成大规模的超额任务），但是它会为转型成一个更复杂的实现铺平道路，将会实现向一个队列添加任务，而后使用线程池的方式来运行它们。使用`std::async`更适合于当你知道你在干什么，并且要完全控制在线程池中构建或执行过任务的线程。
+
+```
+// 04_08.cpp
+#include <iostream>
+#include <list>
+#include <algorithm>
+#include <future>
+#include <type_traits>
+
+template<typename F, typename A>
+std::future<typename std::result_of<F(A&&)>::type> spawn_task(F&& f, A&& a)
+{
+  typedef typename std::result_of<F(A&&)>::type result_type;
+  std::packaged_task<result_type(A&&)> task(std::move(f));
+  std::future<result_type> res(task.get_future());
+  std::thread t(std::move(task), std::move(a));
+  t.detach();
+  return res;
+}
+
+template<typename T>
+std::list<T> parallel_quick_sort(std::list<T> input)
+{
+  if (input.empty()) {
+    return input;
+  }
+
+  std::list<T> result;
+  result.splice(result.begin(), input, input.begin());
+  const T& pivot = *result.begin();
+
+  auto divide_point = std::partition(input.begin(),
+                                     input.end(),
+                                     [&](const T& t){return t < pivot;}
+                                     );
+
+  std::list<T> lower_part;
+  lower_part.splice(lower_part.end(),
+                    input,
+                    input.begin(),
+                    divide_point
+                    );
+
+  /*
+  std::future<std::list<T> > new_lower(std::async(
+                                                  &parallel_quick_sort<T>,
+                                                  std::move(lower_part)
+                                                  )
+                                                  );*/
+
+  auto new_lower(spawn_task(&parallel_quick_sort<T>, std::move(lower_part)));
+
+  auto new_higher(parallel_quick_sort(std::move(input)));
+
+  result.splice(result.end(), new_higher);
+  result.splice(result.begin(), new_lower.get());
+
+  return result;
+}
+
+int main(int argc, char *argv[])
+{
+  std::list<int> list_int {3, 2, 1, 4, 5};
+  std::list<int> result = parallel_quick_sort(list_int);
+
+  for (std::list<int>::iterator it = result.begin();
+       it != result.end();
+       ++it) {
+    std::cout << *it << std::endl;
+  }
+
+  return 0;
+}
+```
+```
+// output
+% ./04_08
+1
+2
+3
+4
+5
+```
+
+这段代码中需要提到的是原书中的代码会产生编译错误：
+
+```
+04_08.cpp:8:41: error: type/value mismatch at argument 1 in template parameter list for ‘template<class _Res> class std::future’
+ std::future<std::result_of<F(A&&)>::type> spawn_task(F&& f, A&& a)
+                                         ^
+```
+
+如何修改？需要在`std::result_of`前加上`typename`关键字，参考：[Using C++ template parameter as argument to another template? [duplicate]](https://stackoverflow.com/questions/22355398/using-c-template-parameter-as-argument-to-another-template)，因此需要正确的写法如下：
+
+```
+template<typename F, typename A>
+std::future<typename std::result_of<F(A&&)>::type> spawn_task(F&& f, A&& a)
+{
+  typedef typename std::result_of<F(A&&)>::type result_type;
+  std::packaged_task<result_type(A&&)> task(std::move(f));
+  std::future<result_type> res(task.get_future());
+  std::thread t(std::move(task), std::move(a));
+  t.detach();
+  return res;
+}
+```
+
+同时需要注意的是`spawn_task`是如何调用的：
+
+```
+auto new_lower(spawn_task(&parallel_quick_sort<T>, std::move(lower_part)));
+```
+
+#### 使用消息传递的同步操作
+
+CSP（Communicating Sequential Processer）的概念十分简单：当没有共享数据，每个线程就可以进行独立思考，其行为纯粹基于其所接收到的信息。
+
+### 总结
+
+同步操作对于使用并发编写一款多线程应用来说，是很重要的一部分：如果没有同步，线程基本上就是独立的，也可写成单独的应用，因其任务之间的相关性，它们可作为一个群体直接执行。本章，我们讨论了各式各样的同步操作，从基本的条件变量，到“期望”、“承诺”，再到打包任务。我们也讨论了替代同步的解决方案：函数化模式编程，完全独立执行的函数，不会受到外部环境的影响；还有，消息传递模式，以消息子系统为中介，向线程异步的发送消息。
