@@ -3207,7 +3207,69 @@ b: true, expected: false
 
 #### `std::atomic<T*>`指针运算
 
-略
+补全书中代码如下：
+
+```
+// 05_else_05.cpp
+#include <iostream>
+#include <atomic>
+#include <cassert>
+
+void test_fetch_add0()
+{
+  class Foo {};
+  Foo some_array[5];
+  std::atomic<Foo *> p(some_array);
+
+  Foo *x = p.fetch_add(2);
+  assert(x == some_array);
+  assert(p.load() == &some_array[2]);
+
+  x = (p -= 1);
+  assert(x == &some_array[1]);
+  assert(p.load() == &some_array[1]);
+}
+
+void test_fetch_add1()
+{
+  int some_array[5] = {0, 1, 2, 3, 4};
+  std::atomic<int *> p(some_array);
+
+  int *x = p.fetch_add(2);
+  std::cout << "*x: " << *x << std::endl;
+  std::cout << "*p: " << *p << std::endl;
+  std::cout << "*(p.load()): " << *(p.load()) << std::endl;
+  assert(*x == 0);
+  assert(*p == 2);
+
+  x = (p -= 1);
+  std::cout << "*x: " << *x << std::endl;
+  std::cout << "*p: " << *p << std::endl;
+  std::cout << "*(p.load()): " << *(p.load()) << std::endl;
+  assert(*x == 1);
+  assert(*p == 1);
+}
+
+int main(int argc, char *argv[])
+{
+  test_fetch_add0();
+  test_fetch_add1();
+
+  return 0;
+}
+```
+```
+// output
+% ./05_else_05
+*x: 0
+*p: 2
+*(p.load()): 2
+*x: 1
+*p: 1
+*(p.load()): 1
+```
+
+好好看看上面的代码进行理解，__`fetch_add()`返回的是原始值__，即数组的首地址。注意代码`p.fetch_add(2);`中`p`的值发生了变化。
 
 #### 标准的原子整形的相关操作
 
@@ -3221,7 +3283,7 @@ b: true, expected: false
 
 以上严格的限制都是依据第3章中的一个建议：不要将锁定区域内的数据，以引用或指针的形式，作为参数传递给用户提供的函数。
 
-以下内容略，见原谅。（不能理解其中的深意）
+以下内容略，见原书。（不能理解其中的深意）
 
 #### 原子操作的释放函数
 
