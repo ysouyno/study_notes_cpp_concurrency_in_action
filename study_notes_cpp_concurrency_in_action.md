@@ -66,6 +66,20 @@
             - [使用“期望”的函数化编程](#使用期望的函数化编程)
             - [使用消息传递的同步操作](#使用消息传递的同步操作)
         - [总结](#总结-1)
+- [<2019-04-09 周二> 《C++并发编程实战》读书笔记（十）](#2019-04-09-周二-c并发编程实战读书笔记十)
+    - [第5章 C++内存模型和原子类型操作（一）](#第5章-c内存模型和原子类型操作一)
+        - [内存模型基础](#内存模型基础)
+            - [对象和内存位置](#对象和内存位置)
+            - [对象、内存位置和并发](#对象内存位置和并发)
+            - [修改顺序](#修改顺序)
+        - [C++中的原子操作和原子类型](#c中的原子操作和原子类型)
+            - [标准原子类型](#标准原子类型)
+            - [`std::atomic_flag`的相关操作](#stdatomicflag的相关操作)
+            - [`std::atomic`的相关操作](#stdatomic的相关操作)
+            - [`std::atomic<T*>`指针运算](#stdatomict指针运算)
+            - [标准的原子整形的相关操作](#标准的原子整形的相关操作)
+            - [`std::atomic<>`主要类的模板](#stdatomic主要类的模板)
+            - [原子操作的释放函数](#原子操作的释放函数)
 
 <!-- markdown-toc end -->
 
@@ -2931,3 +2945,284 @@ CSP（Communicating Sequential Processer）的概念十分简单：当没有共�
 ### 总结
 
 同步操作对于使用并发编写一款多线程应用来说，是很重要的一部分：如果没有同步，线程基本上就是独立的，也可写成单独的应用，因其任务之间的相关性，它们可作为一个群体直接执行。本章，我们讨论了各式各样的同步操作，从基本的条件变量，到“期望”、“承诺”，再到打包任务。我们也讨论了替代同步的解决方案：函数化模式编程，完全独立执行的函数，不会受到外部环境的影响；还有，消息传递模式，以消息子系统为中介，向线程异步的发送消息。
+
+# <2019-04-09 周二> 《C++并发编程实战》读书笔记（十）
+
+## 第5章 C++内存模型和原子类型操作（一）
+
+### 内存模型基础
+
+#### 对象和内存位置
+
+分解一个`struct`，展示不同对象的内存位置，补全书中代码如下：
+
+```
+// 05_else_01.cpp
+#include <iostream>
+#include <string>
+
+struct my_data
+{
+  int i;             // 4
+  double d;          // 16
+  unsigned bf1 : 10; // 24
+  int bf2 : 25;      // 24
+  int /*bf3*/ : 0;   // 24
+  int bf4 : 9;       // 32
+  int i2;            // 32
+  char c1, c2;       // 40
+  std::string s;     // 72
+};
+
+int main(int argc, char *argv[])
+{
+  std::cout << "sizeof(my_data): " << sizeof(my_data) << std::endl;
+
+  return 0;
+}
+```
+
+注释的意思是从上到下逐渐取消成员注释，取`sizeof()`得到的结构体内存大小。（注：`bf3`是一个错误展示，在C++和C中规定，宽度为0的一个未命名位域强制下一位域对齐到其下一`type`边界，其中`type`是该成员的类型。这里使用命名变量为0的位域，可能只是想展示其与bf4是如何分离的。）
+
+关于宽度为0的位域，借用[C/C++位域结构深入解析](https://jocent.me/2017/07/24/bit-field-detail.html)中的代码：
+
+```
+struct BitField_1
+{
+  unsigned a : 4; // 在第一个unsigned int中存放，占四位
+  unsigned   : 0; // 未命名位域
+  unsigned b : 4; // 在第二个unsigned int中存放，占四位
+  unsigned c : 4; // 在第二个unsigned int中存放，占四位
+};
+```
+
+#### 对象、内存位置和并发
+
+如果不去规定两个不同线程对同一内存地址访问的顺序，那么访问就不是原子的。
+
+当程序中的对同一内存地址中的数据访问存在竞争，你可以使用原子操作来避免未定义行为。当然，这不会影响竞争的产生__原子操作并没有指定访问顺序__但原子操作把程序拉回了定义行为的区域内。
+
+#### 修改顺序
+
+每一个在C++程序中的对象，都有（由程序中的所有线程对象）确定好的修改顺序（modification order），在初始化开始阶段确定。在大多数情况下，这个顺序不同于执行中的顺序，但是在给定的执行程序中，所有线程都需要遵守这顺序。如果对象不是一个原子类型，你必要确保有足够的同步操作，来确定每个线程都遵守了变量的修改顺序。
+
+### C++中的原子操作和原子类型
+
+原子操作是一类不可分割的操作，当这样操作在任意线程中进行一半的时候，你是不能查看的；它的状态要不就是完成，要不就是未完成。
+
+#### 标准原子类型
+
+标准原子类型（atomic types）可以在头文件中找到。所有在这种类型上的操作都是原子的，虽然可以使用互斥量去达到原子操作的效果，但只有在这些类型上的操作是原子的（语言明确定义）。实际上，标准原子类型都很相似：它们（大多数）都有一个`is_lock_free()`成员函数，这个函数允许用户决定是否直接对一个给定类型使用原子指令（`x.is_lock_free()`返回`true`），或对编译器和运行库使用内部锁（`x.is_lock_free()`返回`false`）。
+
+看了那么多的类型，我只能感叹C++真的是太复杂了。
+
+通常，标准原子类型是不能拷贝和赋值，他们没有拷贝构造函数和拷贝赋值操作。但是，因为可以隐式转化成对应的内置类型，所以这些类型依旧支持赋值，可以使用`load()`和`store()`成员函数，`exchange()`、`compare_exchange_weak()`和`compare_exchange_strong()`。
+
+原书内容不易消化，再理解请见原书P114。
+
+#### `std::atomic_flag`的相关操作
+
+`std::atomic_flag`是最简单的标准原子类型，它表示了一个布尔标志。这个类型的对象可以在两个状态间切换：设置和清除。
+
+你不能拷贝构造另一个`std::atomic_flag`对象；并且，你不能将一个对象赋予另一个`std::atomic_flag`对象。这并不是`std::atomic_flag`特有的，而是所有原子类型共有的。一个原子类型的所有操作都是原子的，因赋值和拷贝调用了两个对象，这就破坏了操作的原子性。在这样的情况下，拷贝构造和拷贝赋值都会将第一个对象的值进行读取，然后再写入另外一个。对于两个独立的对象，这里就有两个独立的操作了，合并这两个操作必定是不原子的。因此，操作就不被允许。
+
+使用`std::atomic_flag`实现自旋互斥锁，补全书中代码如下：
+
+```
+// 05_01.cpp
+#include <iostream>
+#include <atomic>
+#include <vector>
+#include <thread>
+
+class spinlock_mutex
+{
+  std::atomic_flag flag;
+
+public:
+  spinlock_mutex() :
+    flag(ATOMIC_FLAG_INIT)
+  {}
+
+  void lock()
+  {
+    while (flag.test_and_set(std::memory_order_acquire));
+  }
+
+  void unlock()
+  {
+    flag.clear(std::memory_order_release);
+  }
+};
+
+void f(int n)
+{
+  static spinlock_mutex sm;
+
+  for (int cnt = 0; cnt < 100; ++cnt) {
+    sm.lock();
+    std::cout << "output from thread " << n << std::endl;
+    sm.unlock();
+  }
+}
+
+void test_spinlock_mutex()
+{
+  std::vector<std::thread> v;
+
+  for (int n = 0; n < 10; ++n) {
+    v.emplace_back(f, n);
+  }
+
+  for (auto& t : v) {
+    t.join();
+  }
+}
+
+int main(int argc, char *argv[])
+{
+  test_spinlock_mutex();
+
+  return 0;
+}
+```
+
+这里使用了`static spinlock_mutex sm;`，可以看到输出效果：每个线程都等待其它线程运行完后再执行，而不是同时执行。
+
+这样的互斥量是最最基本的，但是它已经足够`std::lock_guard<>`使用了（详见第3章）。其本质就是在`lock()`中等待，所以这里几乎不可能有竞争的存在，并且可以确保互斥。
+
+由于`std::atomic_flag`局限性太强，因为它没有非修改查询操作，它甚至不能像普通的布尔标志那样使用。所以，你最好使用`std::atomic<bool>`。
+
+#### `std::atomic`的相关操作
+
+```
+// 05_else_02.cpp
+#include <iostream>
+#include <atomic>
+
+void test_std_atomic_bool()
+{
+  std::atomic<bool> b;
+
+  bool x = b.load(std::memory_order_acquire);
+  std::cout << "x: " << std::boolalpha << x
+            << ", b: " << b << std::endl;
+
+  b.store(true);
+  std::cout << "x: " << std::boolalpha << x
+            << ", b: " << b << std::endl;
+
+  x = b.exchange(false, std::memory_order_acq_rel);
+  std::cout << "x: " << std::boolalpha << x
+            << ", b: " << b << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  test_std_atomic_bool();
+
+  return 0;
+}
+```
+```
+// output
+% ./05_else_02
+x: false, b: false
+x: false, b: true
+x: true, b: false
+```
+
+`std::atomic<bool>`提供的`exchange()`，不仅仅是一个“读-改-写”的操作；它还介绍了一种新的存储方式：当当前值与预期值一致时，存储新值的操作。这是一种新型操作，叫做“比较/交换”，它的形式表现为`compare_exchange_weak()`和`compare_exchange_strong()`成员函数。
+
+“比较/交换”操作是原子类型编程的基石；它比较原子变量的当前值和提供的预期值，当两值相等时，存储预期值。当两值不等，预期值就会被更新为原子变量中的值。“比较/交换”函数值是一个`bool`变量，（注意这里是对于上面的代码而言，尼玛）当返回`true`时执行存储操作，当`false`则更新期望值。
+
+对于`compare_exchange_weak()`函数，很难理解为什么要这么做，而且书中P118页提到的“伪失败”（spurious failure）是可能发生在缺少独立“比较-交换”指令的机器上。这个感觉非常虚幻，我要怎么去理解它呢？我看了[C++11 CAS无锁函数compare_exchange_weak的使用](https://www.cnblogs.com/muhe221/articles/5089918.html)的前一段儿，感觉好理解，所以将文章链接贴在这里。
+
+补全书中代码如下：
+
+```
+// 05_else_03.cpp
+#include <iostream>
+#include <atomic>
+
+void test_compare_exchange_weak()
+{
+  bool expected = false;
+  std::atomic<bool> b;
+  bool x = b.compare_exchange_weak(expected, true);
+  std::cout << "x: " << std::boolalpha << x << ", b: " << b
+            << ", expected: " << expected << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  test_compare_exchange_weak();
+
+  return 0;
+}
+```
+```
+// output
+% ./05_else_03
+x: true, b: true, expected: false
+```
+
+因为__`compare_exchange_weak()`可以“伪失败”__，所以__这里通常使用一个循环__，补全书中代码如下：
+
+```
+// 05_else_04.cpp
+#include <iostream>
+#include <atomic>
+
+void test_compare_exchange_weak()
+{
+  bool expected = false;
+  std::atomic<bool> b;
+  // b.compare_exchange_weak(expected, true);
+  while (!b.compare_exchange_weak(expected, true) && !expected);
+  std::cout << std::boolalpha << "b: " << b
+            << ", expected: " << expected << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  test_compare_exchange_weak();
+
+  return 0;
+}
+```
+```
+// output
+% ./05_else_04
+b: true, expected: false
+```
+
+在这个例子中，循环中`expected`的值始终是`false`，表示`compare_exchange_weak()`会莫名的失败。
+
+另一方面，如果实际值与期望值不符，`compare_exchange_strong()`就能保证值返回`false`。这就能消除对循环的需要，就可以知道是否成功的改变了一个变量，或已让另一个线程完成。
+
+接下来的这段儿比较难理解，见原书P118页。
+
+`std::atomic<bool>`和`std::atomic_flag`的不同之处在于，`std::atomic<bool>`不是无锁的；为了保证操作的原子性，其实现中需要一个内置的互斥量。当处于特殊情况时，你可以使用`is_lock_free()`成员函数，去检查`std::atomic<bool>`上的操作是否无锁。这是另一个，除了`std::atomic_flag`之外，所有原子类型都拥有的特征。
+
+#### `std::atomic<T*>`指针运算
+
+略
+
+#### 标准的原子整形的相关操作
+
+略
+
+#### `std::atomic<>`主要类的模板
+
+主模板的存在，在除了标准原子类型之外，允许用户使用自定义类型创建一个原子变量。不是任何自定义类型都可以使用`std::atomic<>`的：需要满足一定的标准才行。为了使用`std::atomic<UDT>`（UDT是用户定义类型），这个类型必须有拷贝赋值运算符。这就意味着这个类型不能有任何虚函数或虚基类，以及必须使用编译器创建的拷贝赋值操作。不仅仅是这些，自定义类型中所有的基类和非静态数据成员也都需要支持拷贝赋值操作。这（基本上）就允许编译器使用`memcpy()`，或赋值操作的等价操作，因为它们的实现中没有用户代码。
+
+最后，这个类型必须是“位可比的”（bitwise equality comparable）。这与对赋值的要求差不多；你不仅需要确定，一个UDT类型对象可以使用`memcpy()`进行拷贝，还要确定其对象可以使用`memcmp()`对位进行比较。之所以要求这么多，是为了保证“比较/交换”操作能正常的工作。
+
+以上严格的限制都是依据第3章中的一个建议：不要将锁定区域内的数据，以引用或指针的形式，作为参数传递给用户提供的函数。
+
+以下内容略，见原谅。（不能理解其中的深意）
+
+#### 原子操作的释放函数
+
+略
