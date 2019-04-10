@@ -80,6 +80,16 @@
             - [标准的原子整形的相关操作](#标准的原子整形的相关操作)
             - [`std::atomic<>`主要类的模板](#stdatomic主要类的模板)
             - [原子操作的释放函数](#原子操作的释放函数)
+- [<2019-04-10 周三> 《C++并发编程实战》读书笔记（十一）](#2019-04-10-周三-c并发编程实战读书笔记十一)
+    - [关于对`std::memory_order`的理解（一）](#关于对stdmemoryorder的理解一)
+        - [Happens-before关系](#happens-before关系)
+        - [Synchronizes-with关系](#synchronizes-with关系)
+    - [第5章 C++内存模型和原子类型操作（二）](#第5章-c内存模型和原子类型操作二)
+        - [同步操作和强制排序（一）](#同步操作和强制排序一)
+            - [同步发生（The synchronizes-with relationship）](#同步发生the-synchronizes-with-relationship)
+            - [先行发生（The happens-before relationship）](#先行发生the-happens-before-relationship)
+            - [原子操作的内存顺序（Memory ordering for atomic operations）（一）](#原子操作的内存顺序memory-ordering-for-atomic-operations一)
+                - [SEQUENTIALLY CONSISTENT ORDERING](#sequentially-consistent-ordering)
 
 <!-- markdown-toc end -->
 
@@ -2984,7 +2994,7 @@ int main(int argc, char *argv[])
 
 注释的意思是从上到下逐渐取消成员注释，取`sizeof()`得到的结构体内存大小。（注：`bf3`是一个错误展示，在C++和C中规定，宽度为0的一个未命名位域强制下一位域对齐到其下一`type`边界，其中`type`是该成员的类型。这里使用命名变量为0的位域，可能只是想展示其与bf4是如何分离的。）
 
-关于宽度为0的位域，借用[C/C++位域结构深入解析](https://jocent.me/2017/07/24/bit-field-detail.html)中的代码：
+关于宽度为0的位域，借用“[C/C++位域结构深入解析](https://jocent.me/2017/07/24/bit-field-detail.html)”中的代码：
 
 ```
 struct BitField_1
@@ -3136,7 +3146,7 @@ x: true, b: false
 
 “比较/交换”操作是原子类型编程的基石；它比较原子变量的当前值和提供的预期值，当两值相等时，存储预期值。当两值不等，预期值就会被更新为原子变量中的值。“比较/交换”函数值是一个`bool`变量，（注意这里是对于上面的代码而言，尼玛）当返回`true`时执行存储操作，当`false`则更新期望值。
 
-对于`compare_exchange_weak()`函数，很难理解为什么要这么做，而且书中P118页提到的“伪失败”（spurious failure）是可能发生在缺少独立“比较-交换”指令的机器上。这个感觉非常虚幻，我要怎么去理解它呢？我看了[C++11 CAS无锁函数compare_exchange_weak的使用](https://www.cnblogs.com/muhe221/articles/5089918.html)的前一段儿，感觉好理解，所以将文章链接贴在这里。
+对于`compare_exchange_weak()`函数，很难理解为什么要这么做，而且书中P118页提到的“伪失败”（spurious failure）是可能发生在缺少独立“比较-交换”指令的机器上。这个感觉非常虚幻，我要怎么去理解它呢？我看了“[C++11 CAS无锁函数compare_exchange_weak的使用](https://www.cnblogs.com/muhe221/articles/5089918.html)”的前一段儿，感觉好理解，所以将文章链接贴在这里。
 
 补全书中代码如下：
 
@@ -3288,3 +3298,232 @@ int main(int argc, char *argv[])
 #### 原子操作的释放函数
 
 略
+
+# <2019-04-10 周三> 《C++并发编程实战》读书笔记（十一）
+
+## 关于对`std::memory_order`的理解（一）
+
+### Happens-before关系
+
+关于happens-before关系这篇文章讲得我能看懂：“[C++ Memory Order 与 Atomic 学习小记](https://zhuanlan.zhihu.com/p/31386431)”。
+
+A、B是两个在多核CPU上执行的操作。如果A happens-before B，那么A所产生的内存变化会在B操作执行之前被看到（visible）。不管我们使用什么编程语言，在同一个线程下的顺序语句总是遵循happens-before原则的。
+
+但程序语义上的happens-before不能代表操作是真的happened-before了。这段话如果不理解可以看上面的链接，简短来说编译器可能会指令重排。
+
+### Synchronizes-with关系
+
+仍然是这篇文章：“[C++ Memory Order 与 Atomic 学习小记](https://zhuanlan.zhihu.com/p/31386431)”，有如下测试代码：
+
+```
+// 05_else_06.cpp
+#include <iostream>
+#include <atomic>
+#include <cassert>
+#include <thread>
+
+int data;
+std::atomic<bool> flag(false);
+
+void producer()
+{
+  data = 42;            // 1
+  flag.store(true);     // 2
+}
+
+void consume()
+{
+  while (!flag.load()); // 3
+  assert(data == 42);   // 4
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread ta(producer);
+  std::thread tb(consume);
+  ta.join();
+  tb.join();
+
+  return 0;
+}
+```
+
+虽然我们使用原子量`flag`作为“同步信号”，而且同一个线程中happens-before原则也一定会被遵循，但我们并不能保证注释4执行时注释1的修改一定会被线程看到。这是由于现代处理器对于程序可能会采取指令重排来提高运行效率。所以，企图在多线程环境中通过某原子量来做非原子量的Synchronization并不是可靠的（当没有Memory Order的约束）。
+
+当然，上面的代码在你的机器上可能也不会出现，因为C++默认使用`memory_order_seq_cst`顺序约束。而且<u>x86架构中也做不到松弛`memory_order_relaxed`内存模型</u>。
+
+## 第5章 C++内存模型和原子类型操作（二）
+
+### 同步操作和强制排序（一）
+
+翻译的确实有点烂，还不如直接看英文原版，比中文版好懂。在这里我找到了英文版：“[www.bogotobogo.com](https://www.bogotobogo.com/cplusplus/files/)”。
+
+从不同线程读写变量，补全书中代码如下：
+
+```
+// 05_02.cpp
+#include <iostream>
+#include <vector>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+std::vector<int> data;
+std::atomic<bool> data_ready(false);
+
+void reader_thread()
+{
+  while (!data_ready.load()) { // 1
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(1s);
+  }
+
+  std::cout << "The answer = " << data[0] << "\n"; // 2
+}
+
+void writer_thread()
+{
+  data.push_back(42); // 3
+  data_ready = true; // 4
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t0(reader_thread);
+  std::thread t1(writer_thread);
+  t0.join();
+  t1.join();
+
+  return 0;
+}
+```
+
+现在来看看“happens-before”和“synchronizes-with”。
+
+> The write of the data 3 happens-before the write to the data_ready flag 4, and the read of the flag 1 happens-before the read of the data 2. When the value read from data_ready 1 is true, the write synchronizes-with that read, creating a happens-before relationship. Because happens-before is transitive, the write to the data 3 happens-before the write to the flag 4, which happens-before the read of the true value from the flag 1, which happens-before the read of the data 2, and you have an enforced ordering: the write of the data happens-before the read of the data and everything is OK.
+
+看了上面的内容再结合[关于对`std::memory_order`的理解（一）](#关于对stdmemoryorder的理解一)就可以更好的理解“happens-before”和“synchronizes-with”了。
+
+#### 同步发生（The synchronizes-with relationship）
+
+同步关系只在原子类型之间产生。这种关系只能来自于对原子类型的操作。
+
+#### 先行发生（The happens-before relationship）
+
+> The happens-before relationship is the basic building block of operation ordering in a program; it specifies which operations see the effects of which other operations. For a single thread, it’s largely straightforward: if one operation is sequenced before another, then it also happens-before it. This means that if one operation (A) occurs in a statement prior to another (B) in the source code, then A happens-before B. You saw that in "05_02.cpp": the write to data 3 happens-before the write to data_ready 4. If the operations occur in the same statement, in general there’s no happens-before relationship between them, because they’re unordered. This is just another way of saying that the ordering is unspecified. You know that the program in the following listing will output “1,2” or “2,1”, but it’s unspecified which, because the order of the two calls to get_num()is unspecified.
+
+```
+// 05_03.cpp
+#include <iostream>
+
+void foo(int a, int b)
+{
+  std::cout << a << ", " << b << std::endl;
+}
+
+int get_num()
+{
+  static int i = 0;
+  return ++i;
+}
+
+int main(int argc, char *argv[])
+{
+  foo(get_num(), get_num());
+
+  return 0;
+}
+```
+```
+// output
+% ./05_03
+2, 1
+```
+
+为什么这里我的输出总是“2, 1”呢？没看到“1, 2”的情况？
+
+“Inter-thread happens-before”关系是可以传递的，同时“Inter-thread happens-before also combines with the sequenced-before relation”。
+
+#### 原子操作的内存顺序（Memory ordering for atomic operations）（一）
+
+> Although there are six ordering options, they represent three models: sequentially consistent ordering (memory_order_seq_cst), acquire-release ordering (memory_order_consume, memory_order_acquire, memory_order_release, and memory_order_acq_rel), and relaxed ordering (memory_order_relaxed).
+
+为了选择要使用哪个排序模型，或者为了理解使用不同模型的代码中的排序关系，了解这些选择如何影响程序行为是很重要的。因此，让我们看看每种操作排序和同步选择的结果。
+
+##### SEQUENTIALLY CONSISTENT ORDERING
+
+```
+// 05_04.cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <cassert>
+
+std::atomic<bool> x, y;
+std::atomic<int> z;
+
+void write_x()
+{
+  x.store(true, std::memory_order_seq_cst); // 1
+}
+
+void write_y()
+{
+  y.store(true, std::memory_order_seq_cst); // 2
+}
+
+void read_x_then_y()
+{
+  while (!x.load(std::memory_order_seq_cst));
+  if (y.load(std::memory_order_seq_cst)) // 3
+    ++z;
+}
+
+void read_y_then_x()
+{
+  while (!y.load(std::memory_order_seq_cst));
+  if (x.load(std::memory_order_seq_cst)) // 4
+    ++z;
+}
+
+int main(int argc, char *argv[])
+{
+  x = false;
+  y = false;
+  z = 0;
+
+  std::thread a(write_x);
+  std::thread b(write_y);
+  std::thread c(read_x_then_y);
+  std::thread d(read_y_then_x);
+  a.join();
+  b.join();
+  c.join();
+  d.join();
+
+  assert(z.load() != 0); // 5
+  std::cout << "z: " << z << std::endl;
+
+  return 0;
+}
+```
+```
+// output
+% ./05_04
+z: 2
+```
+```
+// output
+% ./05_04
+z: 1
+```
+
+注释5处永远都会成功，下面的说明讲得很好：
+
+> The assert 5 can never fire, because either the store to x 1 or the store to y 2 must happen first, even though it’s not specified which. If the load of y in read_x_then_y 3 returns false, the store to x must occur before the store to y, in which case the load of x in read_y_then_x 4 must return true, because the while loop ensures that the y is true at this point. Because the semantics of memory_order_seq_cst require a single total ordering over all operations tagged memory_order_seq_cst, there’s an implied ordering relationship between a load of y that returns false 3 and the store to y 1. For there to be a single total order, if one thread sees x==true and then subsequently sees y==false, this implies that the store to x occurs before the store to y in this total order.
+
+> Of course, because everything is symmetrical, it could also happen the other way around, with the load of x 4 returning false, forcing the load of y 3 to return true. In both cases, z is equal to 1. Both loads can return true, leading to z being 2, butunder no circumstances can z be zero.
+
+关于书中的插图理解可以见原书P126，不难理解。
