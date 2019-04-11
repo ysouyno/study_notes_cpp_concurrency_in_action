@@ -3857,4 +3857,4 @@ z: 1
 
 > Eventually, the load from y 3 will see true as written by the store 2. Because the store uses memory_order_release and the load uses memory_order_acquire, the store synchronizes-with the load. The store to x 1 happens-before the store to y 2, because they’re in the same thread. Because the store to y synchronizes-with the load from y, the store to x also happens-before the load from y and by extension happensbefore the load from x 4. Thus the load from x must read true, and the assert 5 can’t fire.
 
-原文中继续使用隔间中的人来举例，讲得不错，见原谅P136。
+原文中继续使用隔间中的人来举例，讲得不错，见原书P136。
