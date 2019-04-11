@@ -90,6 +90,14 @@
             - [先行发生（The happens-before relationship）](#先行发生the-happens-before-relationship)
             - [原子操作的内存顺序（Memory ordering for atomic operations）（一）](#原子操作的内存顺序memory-ordering-for-atomic-operations一)
                 - [SEQUENTIALLY CONSISTENT ORDERING](#sequentially-consistent-ordering)
+- [<2019-04-11 周四> 《C++并发编程实战》读书笔记（十二）](#2019-04-11-周四-c并发编程实战读书笔记十二)
+    - [第5章 C++内存模型和原子类型操作（三）](#第5章-c内存模型和原子类型操作三)
+        - [同步操作和强制排序（二）](#同步操作和强制排序二)
+            - [原子操作的内存顺序（Memory ordering for atomic operations）（二）](#原子操作的内存顺序memory-ordering-for-atomic-operations二)
+                - [NON-SEQUENTIALLY CONSISTENT MEMORY ORDERINGS](#non-sequentially-consistent-memory-orderings)
+                - [RELAXED ORDERING](#relaxed-ordering)
+                - [UNDERSTANDING RELAXED ORDERING](#understanding-relaxed-ordering)
+                - [ACQUIRE-RELEASE ORDERING](#acquire-release-ordering)
 
 <!-- markdown-toc end -->
 
@@ -3454,6 +3462,8 @@ int main(int argc, char *argv[])
 
 ##### SEQUENTIALLY CONSISTENT ORDERING
 
+<span id="05_04_cpp"></span>
+
 ```
 // 05_04.cpp
 #include <iostream>
@@ -3527,3 +3537,324 @@ z: 1
 > Of course, because everything is symmetrical, it could also happen the other way around, with the load of x 4 returning false, forcing the load of y 3 to return true. In both cases, z is equal to 1. Both loads can return true, leading to z being 2, butunder no circumstances can z be zero.
 
 关于书中的插图理解可以见原书P126，不难理解。
+
+# <2019-04-11 周四> 《C++并发编程实战》读书笔记（十二）
+
+## 第5章 C++内存模型和原子类型操作（三）
+
+### 同步操作和强制排序（二）
+
+#### 原子操作的内存顺序（Memory ordering for atomic operations）（二）
+
+##### NON-SEQUENTIALLY CONSISTENT MEMORY ORDERINGS
+
+略，见原文。
+
+##### RELAXED ORDERING
+
+<span id="05_05_cpp"></span>
+
+```
+// 05_05.cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <cassert>
+
+std::atomic<bool> x, y;
+std::atomic<int> z;
+
+void wirte_x_then_y()
+{
+  x.store(true, std::memory_order_relaxed); // 1
+  y.store(true, std::memory_order_relaxed); // 2
+}
+
+void read_y_then_x()
+{
+  while (!y.load(std::memory_order_relaxed)); // 3
+  if (x.load(std::memory_order_relaxed)) // 4
+    ++z;
+}
+
+int main(int argc, char *argv[])
+{
+  x = false;
+  y = false;
+  z = 0;
+
+  std::thread a(wirte_x_then_y);
+  std::thread b(read_y_then_x);
+  a.join();
+  b.join();
+
+  std::cout << "z: " << z.load() << std::endl;
+  assert(z.load() != 0); // 5
+
+  return 0;
+}
+```
+```
+// output
+% ./05_05
+z: 1
+```
+
+这里我没有能重现出注释5处的断言失败的情况，即使我加了一万次的循环来执行它。这个添加循环的方法应该也不是正确的测试方法。
+
+> This time the assert 5 can fire, because the load of x 4 can read false, even though the load of y 3 reads true and the store of x 1 happens-before the store of y 2. x and y are different variables, so there are no ordering guarantees relating to the visibility of values arising from operations on each.
+
+上面引用原文的解释，这里不打算想如何重现它，因为注释1和注释2是不同的两个变量，所以对于每个操作产生的值的可见性，没有顺序保证。
+
+多线程中的松散操作，如下代码所示：
+
+```
+// 05_06.cpp
+#include <iostream>
+#include <thread>
+#include <atomic>
+
+std::atomic<int> x(0), y(0), z(0);
+std::atomic<bool> go(false);
+
+const unsigned loop_count = 9;
+
+struct read_values
+{
+  int x, y, z;
+};
+
+read_values values1[loop_count];
+read_values values2[loop_count];
+read_values values3[loop_count];
+read_values values4[loop_count];
+read_values values5[loop_count];
+
+void increment(std::atomic<int> *var_to_inc, read_values *values)
+{
+  while (!go) {
+    std::this_thread::yield();
+  }
+
+  for (unsigned i = 0; i < loop_count; ++i) {
+    values[i].x = x.load(std::memory_order_relaxed);
+    values[i].y = y.load(std::memory_order_relaxed);
+    values[i].z = z.load(std::memory_order_relaxed);
+    var_to_inc->store(i + 1, std::memory_order_relaxed);
+    std::this_thread::yield();
+  }
+}
+
+void read_vals(read_values *values)
+{
+  while (!go) {
+    std::this_thread::yield();
+  }
+
+  for (unsigned i = 0; i < loop_count; ++i) {
+    values[i].x = x.load(std::memory_order_relaxed);
+    values[i].y = y.load(std::memory_order_relaxed);
+    values[i].z = z.load(std::memory_order_relaxed);
+    std::this_thread::yield();
+  }
+}
+
+void print(read_values *v)
+{
+  for (unsigned i = 0; i < loop_count; ++i) {
+    if (i) {
+      std::cout << ", ";
+    }
+
+    std::cout << "(" << v[i].x << ", " << v[i].y << ", " << v[i].z << ")";
+  }
+
+  std::cout << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t1(increment, &x, values1);
+  std::thread t2(increment, &y, values2);
+  std::thread t3(increment, &z, values3);
+  std::thread t4(read_vals, values4);
+  std::thread t5(read_vals, values5);
+
+  go = true;
+
+  t5.join();
+  t4.join();
+  t3.join();
+  t2.join();
+  t1.join();
+
+  print(values1);
+  print(values2);
+  print(values3);
+  print(values4);
+  print(values5);
+
+  return 0;
+}
+```
+
+输出是可变的，下面的程序可能的输出：
+
+```
+// output
+% ./05_06
+(0, 9, 9), (1, 9, 9), (2, 9, 9), (3, 9, 9), (4, 9, 9), (5, 9, 9), (6, 9, 9), (7, 9, 9), (8, 9, 9)
+(0, 0, 0), (0, 1, 1), (0, 2, 1), (0, 3, 1), (0, 4, 1), (0, 5, 1), (0, 6, 1), (0, 7, 1), (0, 8, 1)
+(0, 1, 0), (0, 9, 1), (0, 9, 2), (0, 9, 3), (0, 9, 4), (0, 9, 5), (0, 9, 6), (0, 9, 7), (0, 9, 8)
+(0, 1, 0), (0, 9, 1), (0, 9, 2), (0, 9, 3), (0, 9, 4), (0, 9, 5), (0, 9, 6), (0, 9, 7), (0, 9, 8)
+(0, 1, 0), (0, 1, 1), (0, 2, 1), (0, 3, 1), (0, 4, 1), (0, 5, 1), (0, 6, 1), (0, 7, 1), (0, 8, 1)
+```
+
+上面的代码很简单，但是我对输出很费解，引用原文：
+
+> The first set of values shows x increasing by one with each triplet, the second set has y increasing by one, and the third has z increasing by one.
+
+> The x elements of each triplet only increase within a given set, as do the y and z elements, but the increments are uneven, and the relative orderings vary between all threads.
+
+> Thread 3 doesn’t see any of the updates to x or y; it sees only the updates it makes to z. This doesn’t stop the other threads from seeing the updates to z mixed in with the updates to x and y though.
+
+##### UNDERSTANDING RELAXED ORDERING
+
+原文举的例子很有意思，见英文版P132，此处略过。
+
+##### ACQUIRE-RELEASE ORDERING
+
+> Acquire-release ordering is a step up from relaxed ordering; there’s still no total order of operations, but it does introduce some synchronization. Under this ordering model, atomic loads are acquire operations (memory_order_acquire), atomic stores are release operations (memory_order_release), and atomic read-modify-write operations (such as fetch_add() or exchange()) are either acquire, release, or both (memory_order_acq_rel). Synchronization is pairwise, between the thread that does the release and the thread that does the acquire. A release operation synchronizes-with an acquire operation that reads the value written. This means that different threads can still see different orderings, but these orderings are restricted.
+
+对于上面原文中的内容，我提取出我想要的重点：
+
+| atomic operation         | operation        | std::memory_order    |
+| :---                     | :---             | :---                 |
+| atomic loads             | acquire          | memory_order_acquire |
+| atomic stores            | release          | memory_order_release |
+| atomic read-modify-write | acquire, release | memory_order_acq_rel |
+
+下面代码是对“[05_04.cpp](#05_04_cpp)”的一次重写，使用“acquire-release semantics”而不是（rather than）“sequentially consistent”，代码如下：
+
+```
+// 05_07.cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <cassert>
+
+std::atomic<bool> x, y;
+std::atomic<int> z;
+
+void write_x()
+{
+  x.store(true, std::memory_order_release);
+}
+
+void write_y()
+{
+  y.store(true, std::memory_order_release);
+}
+
+void read_x_then_y()
+{
+  while (!x.load(std::memory_order_acquire));
+  if (y.load(std::memory_order_acquire)) // 1
+    ++z;
+}
+
+void read_y_then_x()
+{
+  while (!y.load(std::memory_order_acquire));
+  if (x.load(std::memory_order_acquire)) // 2
+    ++z;
+}
+
+int main(int argc, char *argv[])
+{
+  x = false;
+  y = false;
+  z = 0;
+
+  std::thread a(write_x);
+  std::thread b(write_y);
+  std::thread c(read_x_then_y);
+  std::thread d(read_y_then_x);
+  a.join();
+  b.join();
+  c.join();
+  d.join();
+
+  std::cout << "z: " << z.load() << std::endl;
+  assert(z.load() != 0); // 3
+
+  return 0;
+}
+```
+```
+// output
+% ./05_07
+z: 1
+```
+```
+// output
+% ./05_07
+z: 2
+```
+
+> In this case the assert 3 can fire (just like in the relaxed-ordering case), because it’s possible for both the load of x 2 and the load of y 1 to read false. x and y are written by different threads, so the ordering from the release to the acquire in each case has no effect on the operations in the other threads.
+
+这里断言能触发的原因是因为它们都位于不同的线程中，因为不存在像前面描述的那样强制排序的“happens-before”关系。
+
+为了看到“acquire-release”的好处，需要考虑将两个存储放到同一个线程中，就像“[05_05.cpp](#05_05_cpp)”代码中的那样，见下面的代码：
+
+```
+// 05_08.cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <cassert>
+
+std::atomic<bool> x, y;
+std::atomic<int> z;
+
+void write_x_then_y()
+{
+  x.store(true, std::memory_order_relaxed); // 1
+  y.store(true, std::memory_order_release); // 2
+}
+
+void read_y_then_x()
+{
+  while (!y.load(std::memory_order_acquire)); // 3
+  if (x.load(std::memory_order_relaxed)) // 4
+    ++z;
+}
+
+int main(int argc, char *argv[])
+{
+  x = false;
+  y = false;
+  z = 0;
+
+  std::thread a(write_x_then_y);
+  std::thread b(read_y_then_x);
+  a.join();
+  b.join();
+
+  std::cout << "z: " << z.load() << std::endl;
+  assert(z.load() != 0); // 5
+
+  return 0;
+}
+```
+```
+% ./05_08
+z: 1
+```
+
+上面代码的断言永远不会触发，因为：
+
+> Eventually, the load from y 3 will see true as written by the store 2. Because the store uses memory_order_release and the load uses memory_order_acquire, the store synchronizes-with the load. The store to x 1 happens-before the store to y 2, because they’re in the same thread. Because the store to y synchronizes-with the load from y, the store to x also happens-before the load from y and by extension happensbefore the load from x 4. Thus the load from x must read true, and the assert 5 can’t fire.
+
+原文中继续使用隔间中的人来举例，讲得不错，见原谅P136。
