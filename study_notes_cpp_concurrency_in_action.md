@@ -98,6 +98,13 @@
                 - [RELAXED ORDERING](#relaxed-ordering)
                 - [UNDERSTANDING RELAXED ORDERING](#understanding-relaxed-ordering)
                 - [ACQUIRE-RELEASE ORDERING](#acquire-release-ordering)
+- [<2019-04-13 周六> 《C++并发编程实战》读书笔记（十三）](#2019-04-13-周六-c并发编程实战读书笔记十三)
+    - [第5章 C++内存模型和原子类型操作（四）](#第5章-c内存模型和原子类型操作四)
+        - [同步操作和强制排序（三）](#同步操作和强制排序三)
+            - [原子操作的内存顺序（Memory ordering for atomic operations）（三）](#原子操作的内存顺序memory-ordering-for-atomic-operations三)
+                - [TRANSITIVE SYNCHRONIZATION WITH ACQUIRE-RELEASE ORDERING](#transitive-synchronization-with-acquire-release-ordering)
+                - [DATA DEPENDENCY WITH ACQUIRE-RELEASE ORDERING AND MEMORY_ORDER_CONSUME](#data-dependency-with-acquire-release-ordering-and-memoryorderconsume)
+            - [释放队列与同步（Release sequences and synchronizes-with）](#释放队列与同步release-sequences-and-synchronizes-with)
 
 <!-- markdown-toc end -->
 
@@ -3420,7 +3427,7 @@ int main(int argc, char *argv[])
 
 #### 先行发生（The happens-before relationship）
 
-> The happens-before relationship is the basic building block of operation ordering in a program; it specifies which operations see the effects of which other operations. For a single thread, it’s largely straightforward: if one operation is sequenced before another, then it also happens-before it. This means that if one operation (A) occurs in a statement prior to another (B) in the source code, then A happens-before B. You saw that in "05_02.cpp": the write to data 3 happens-before the write to data_ready 4. If the operations occur in the same statement, in general there’s no happens-before relationship between them, because they’re unordered. This is just another way of saying that the ordering is unspecified. You know that the program in the following listing will output “1,2” or “2,1”, but it’s unspecified which, because the order of the two calls to get_num()is unspecified.
+> The happens-before relationship is the basic building block of operation ordering in a program; it specifies which operations see the effects of which other operations. For a single thread, it’s largely straightforward: if one operation is sequenced before another, then it also happens-before it. This means that if one operation (A) occurs in a statement prior to another (B) in the source code, then A happens-before B. You saw that in "05_02.cpp": the write to data 3 happens-before the write to data_ready 4. If the operations occur in the same statement, in general there’s no happens-before relationship between them, because they’re unordered. This is just another way of saying that the ordering is unspecified. You know that the program in the following listing will output “1,2” or “2,1”, but it’s unspecified which, because the order of the two calls to `get_num()`is unspecified.
 
 ```
 // 05_03.cpp
@@ -3456,7 +3463,7 @@ int main(int argc, char *argv[])
 
 #### 原子操作的内存顺序（Memory ordering for atomic operations）（一）
 
-> Although there are six ordering options, they represent three models: sequentially consistent ordering (memory_order_seq_cst), acquire-release ordering (memory_order_consume, memory_order_acquire, memory_order_release, and memory_order_acq_rel), and relaxed ordering (memory_order_relaxed).
+> Although there are six ordering options, they represent three models: sequentially consistent ordering (`memory_order_seq_cst`), acquire-release ordering (`memory_order_consume`, `memory_order_acquire`, `memory_order_release`, and `memory_order_acq_rel`), and relaxed ordering (`memory_order_relaxed`).
 
 为了选择要使用哪个排序模型，或者为了理解使用不同模型的代码中的排序关系，了解这些选择如何影响程序行为是很重要的。因此，让我们看看每种操作排序和同步选择的结果。
 
@@ -3532,9 +3539,9 @@ z: 1
 
 注释5处永远都会成功，下面的说明讲得很好：
 
-> The assert 5 can never fire, because either the store to x 1 or the store to y 2 must happen first, even though it’s not specified which. If the load of y in read_x_then_y 3 returns false, the store to x must occur before the store to y, in which case the load of x in read_y_then_x 4 must return true, because the while loop ensures that the y is true at this point. Because the semantics of memory_order_seq_cst require a single total ordering over all operations tagged memory_order_seq_cst, there’s an implied ordering relationship between a load of y that returns false 3 and the store to y 1. For there to be a single total order, if one thread sees x==true and then subsequently sees y==false, this implies that the store to x occurs before the store to y in this total order.
+> The assert 5 can never fire, because either the store to `x` 1 or the store to `y` 2 must happen first, even though it’s not specified which. If the load of `y` in `read_x_then_y` 3 returns false, the store to `x` must occur before the store to `y`, in which case the load of `x` in `read_y_then_x` 4 must return true, because the `while` loop ensures that the `y` is true at this point. Because the semantics of `memory_order_seq_cst` require a single total ordering over all operations tagged `memory_order_seq_cst`, there’s an implied ordering relationship between a load of `y` that returns false 3 and the store to `y` 1. For there to be a single total order, if one thread sees `x==true` and then subsequently sees `y==false`, this implies that the store to `x` occurs before the store to `y` in this total order.
 
-> Of course, because everything is symmetrical, it could also happen the other way around, with the load of x 4 returning false, forcing the load of y 3 to return true. In both cases, z is equal to 1. Both loads can return true, leading to z being 2, butunder no circumstances can z be zero.
+> Of course, because everything is symmetrical, it could also happen the other way around, with the load of `x` 4 returning false, forcing the load of `y` 3 to return true. In both cases, `z` is equal to 1. Both loads can return true, leading to `z` being 2, butunder no circumstances can `z` be zero.
 
 关于书中的插图理解可以见原书P126，不难理解。
 
@@ -3602,7 +3609,7 @@ z: 1
 
 这里我没有能重现出注释5处的断言失败的情况，即使我加了一万次的循环来执行它。这个添加循环的方法应该也不是正确的测试方法。
 
-> This time the assert 5 can fire, because the load of x 4 can read false, even though the load of y 3 reads true and the store of x 1 happens-before the store of y 2. x and y are different variables, so there are no ordering guarantees relating to the visibility of values arising from operations on each.
+> This time the assert 5 can fire, because the load of `x` 4 can read false, even though the load of `y` 3 reads true and the store of `x` 1 happens-before the store of `y` 2. `x` and `y` are different variables, so there are no ordering guarantees relating to the visibility of values arising from operations on each.
 
 上面引用原文的解释，这里不打算想如何重现它，因为注释1和注释2是不同的两个变量，所以对于每个操作产生的值的可见性，没有顺序保证。
 
@@ -3712,11 +3719,11 @@ int main(int argc, char *argv[])
 
 上面的代码很简单，但是我对输出很费解，引用原文：
 
-> The first set of values shows x increasing by one with each triplet, the second set has y increasing by one, and the third has z increasing by one.
+> The first set of values shows `x` increasing by one with each triplet, the second set has `y` increasing by one, and the third has `z` increasing by one.
 
-> The x elements of each triplet only increase within a given set, as do the y and z elements, but the increments are uneven, and the relative orderings vary between all threads.
+> The `x` elements of each triplet only increase within a given set, as do the `y` and `z` elements, but the increments are uneven, and the relative orderings vary between all threads.
 
-> Thread 3 doesn’t see any of the updates to x or y; it sees only the updates it makes to z. This doesn’t stop the other threads from seeing the updates to z mixed in with the updates to x and y though.
+> Thread 3 doesn’t see any of the updates to `x` or `y`; it sees only the updates it makes to `z`. This doesn’t stop the other threads from seeing the updates to `z` mixed in with the updates to `x` and `y` though.
 
 ##### UNDERSTANDING RELAXED ORDERING
 
@@ -3724,7 +3731,7 @@ int main(int argc, char *argv[])
 
 ##### ACQUIRE-RELEASE ORDERING
 
-> Acquire-release ordering is a step up from relaxed ordering; there’s still no total order of operations, but it does introduce some synchronization. Under this ordering model, atomic loads are acquire operations (memory_order_acquire), atomic stores are release operations (memory_order_release), and atomic read-modify-write operations (such as fetch_add() or exchange()) are either acquire, release, or both (memory_order_acq_rel). Synchronization is pairwise, between the thread that does the release and the thread that does the acquire. A release operation synchronizes-with an acquire operation that reads the value written. This means that different threads can still see different orderings, but these orderings are restricted.
+> Acquire-release ordering is a step up from relaxed ordering; there’s still no total order of operations, but it does introduce some synchronization. Under this ordering model, atomic loads are acquire operations (`memory_order_acquire`), atomic stores are release operations (`memory_order_release`), and atomic read-modify-write operations (such as `fetch_add()` or `exchange()`) are either acquire, release, or both (`memory_order_acq_rel`). Synchronization is pairwise, between the thread that does the release and the thread that does the acquire. A release operation synchronizes-with an acquire operation that reads the value written. This means that different threads can still see different orderings, but these orderings are restricted.
 
 对于上面原文中的内容，我提取出我想要的重点：
 
@@ -3802,7 +3809,7 @@ z: 1
 z: 2
 ```
 
-> In this case the assert 3 can fire (just like in the relaxed-ordering case), because it’s possible for both the load of x 2 and the load of y 1 to read false. x and y are written by different threads, so the ordering from the release to the acquire in each case has no effect on the operations in the other threads.
+> In this case the assert 3 can fire (just like in the relaxed-ordering case), because it’s possible for both the load of `x` 2 and the load of `y` 1 to read false. `x` and `y` are written by different threads, so the ordering from the release to the acquire in each case has no effect on the operations in the other threads.
 
 这里断言能触发的原因是因为它们都位于不同的线程中，因为不存在像前面描述的那样强制排序的“happens-before”关系。
 
@@ -3855,6 +3862,395 @@ z: 1
 
 上面代码的断言永远不会触发，因为：
 
-> Eventually, the load from y 3 will see true as written by the store 2. Because the store uses memory_order_release and the load uses memory_order_acquire, the store synchronizes-with the load. The store to x 1 happens-before the store to y 2, because they’re in the same thread. Because the store to y synchronizes-with the load from y, the store to x also happens-before the load from y and by extension happensbefore the load from x 4. Thus the load from x must read true, and the assert 5 can’t fire.
+> Eventually, the load from `y` 3 will see `true` as written by the store 2. Because the store uses `memory_order_release` and the load uses `memory_order_acquire`, the store synchronizes-with the load. The store to `x` 1 happens-before the store to `y` 2, because they’re in the same thread. Because the store to `y` synchronizes-with the load from `y`, the store to `x` also happens-before the load from `y` and by extension happensbefore the load from `x` 4. Thus the load from `x` must read true, and the assert 5 can’t fire.
 
 原文中继续使用隔间中的人来举例，讲得不错，见原书P136。
+
+# <2019-04-13 周六> 《C++并发编程实战》读书笔记（十三）
+
+## 第5章 C++内存模型和原子类型操作（四）
+
+### 同步操作和强制排序（三）
+
+#### 原子操作的内存顺序（Memory ordering for atomic operations）（三）
+
+##### TRANSITIVE SYNCHRONIZATION WITH ACQUIRE-RELEASE ORDERING
+
+这里现在有点好理解了，补全书中代码如下：
+
+```
+// 05_09.cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <cassert>
+
+struct data
+{
+  int val;
+};
+
+std::atomic<int> data[5];
+std::atomic<bool> sync1(false), sync2(false);
+
+void thread_1()
+{
+  data[0].store(42, std::memory_order_relaxed);
+  data[1].store(97, std::memory_order_relaxed);
+  data[2].store(17, std::memory_order_relaxed);
+  data[3].store(-141, std::memory_order_relaxed);
+  data[4].store(2003, std::memory_order_relaxed);
+  sync1.store(true, std::memory_order_release); // 1
+}
+
+void thread_2()
+{
+  while (!sync1.load(std::memory_order_acquire)); // 2
+  sync2.store(true, std::memory_order_release); // 3
+}
+
+void thread_3()
+{
+  while (!sync2.load(std::memory_order_acquire)); // 4
+
+  std::cout << "data[0]: " << data[0].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[1]: " << data[1].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[2]: " << data[2].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[3]: " << data[3].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[4]: " << data[4].load(std::memory_order_relaxed)
+            << std::endl;
+
+  assert(data[0].load(std::memory_order_relaxed) == 42);
+  assert(data[1].load(std::memory_order_relaxed) == 97);
+  assert(data[2].load(std::memory_order_relaxed) == 17);
+  assert(data[3].load(std::memory_order_relaxed) == -141);
+  assert(data[4].load(std::memory_order_relaxed) == 2003);
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t1(thread_1);
+  std::thread t2(thread_2);
+  std::thread t3(thread_3);
+  t1.join();
+  t2.join();
+  t3.join();
+
+  return 0;
+}
+```
+```
+// output
+% ./05_09
+data[0]: 42
+data[1]: 97
+data[2]: 17
+data[3]: -141
+data[4]: 2003
+```
+
+`thread_3`中的断言不会触发，见原谅的解释：
+
+> Even though `thread_2` only touches the variables `sync1` 2 and `sync2` 3, this is enough for synchronization between `thread_1` and `thread_3` to ensure that the `asserts` don’t fire. First off, the stores to `data` from `thread_1` happens-before the store to `sync1` 1, because they’re sequenced-before it in the same thread. Because the load from `sync1` 1 is in a while loop, it will eventually see the value stored from `thread_1` and thus form the second half of the release-acquire pair. Therefore, the store to `sync1` happens-before the final load from `sync1` in the `while` loop. This load is sequenced-before (and thus happens-before) the store to `sync2` 3, which forms a release-acquire pair with the final load from the `while` loop in `thread_3` 4. The store to `sync2` 3 thus happens-before the load 4, which happens-before the loads from `data`. Because of the transitive nature of happens-before, you can chain it all together: the stores to `data` happen-before the store to `sync1` 1, which happens-before the load from `sync1` 1, which happens-before the store to `sync2` 3, which happensbefore the load from `sync2` 4, which happens-before the loads from `data`. Thus the stores to `data` in `thread_1` happen-before the loads from `data` in `thread_3`, and the asserts can’t fire.
+
+上面的代码使用了两个变量`sync1`和`sync2`，现在来尝试一下使用一个变量，这样的话就需要用到`std::memory_order_acq_rel`（read-modify-write）和`compare_exchange_strong()`了，补全书中代码如下：
+
+```
+// 05_else_07.cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <cassert>
+
+struct data
+{
+  int val;
+};
+
+std::atomic<int> data[5];
+std::atomic<int> sync(0);
+
+void thread_1()
+{
+  data[0].store(42, std::memory_order_relaxed);
+  data[1].store(97, std::memory_order_relaxed);
+  data[2].store(17, std::memory_order_relaxed);
+  data[3].store(-141, std::memory_order_relaxed);
+  data[4].store(2003, std::memory_order_relaxed);
+  sync.store(1, std::memory_order_release);
+}
+
+void thread_2()
+{
+  int expected = 1;
+  while (!sync.compare_exchange_strong(expected,
+                                       2,
+                                       std::memory_order_acq_rel
+                                       )) {
+    expected = 1;
+  }
+}
+
+void thread_3()
+{
+  while (sync.load(std::memory_order_acquire) < 2);
+
+  std::cout << "data[0]: " << data[0].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[1]: " << data[1].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[2]: " << data[2].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[3]: " << data[3].load(std::memory_order_relaxed)
+            << std::endl;
+  std::cout << "data[4]: " << data[4].load(std::memory_order_relaxed)
+            << std::endl;
+
+  assert(data[0].load(std::memory_order_relaxed) == 42);
+  assert(data[1].load(std::memory_order_relaxed) == 97);
+  assert(data[2].load(std::memory_order_relaxed) == 17);
+  assert(data[3].load(std::memory_order_relaxed) == -141);
+  assert(data[4].load(std::memory_order_relaxed) == 2003);
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t1(thread_1);
+  std::thread t2(thread_2);
+  std::thread t3(thread_3);
+  t1.join();
+  t2.join();
+  t3.join();
+
+  return 0;
+}
+```
+```
+// output
+% ./05_else_07
+data[0]: 42
+data[1]: 97
+data[2]: 17
+data[3]: -141
+data[4]: 2003
+```
+
+如果你使用“read-modify-write”操作，选择您想要的语义是很重要的。比如说：
+
+> A `fetch_sub` operation with `memory_order_acquire` semantics doesn’t synchronize-with anything, even though it stores a value, because it isn’t a release operation. Likewise, a store can’t synchronize-with a `fetch_or` with `memory_order_release` semantics, because the read part of the `fetch_or` isn’t an acquire operation.
+
+##### DATA DEPENDENCY WITH ACQUIRE-RELEASE ORDERING AND MEMORY_ORDER_CONSUME
+
+这里讲得关于`memory_order_consume`好像更多的是用在有指针出现的需要同步的地方，如原文所说：
+
+> One important use for this kind of memory ordering is where the atomic operation loads a pointer to some data. By using `memory_order_consume` on the load and `memory_order_release` on the prior store, you ensure that the pointed-to data is correctly synchronized, without imposing any synchronization requirements on any other nondependent data. The following listing shows an example of this scenario.
+
+```
+// 05_10.cpp
+#include <iostream>
+#include <string>
+#include <atomic>
+#include <thread>
+#include <cassert>
+#include <chrono>
+
+struct X
+{
+  int i;
+  std::string s;
+};
+
+std::atomic<X *> p;
+std::atomic<int> a;
+
+void create_x()
+{
+  X *x = new X;
+  x->i = 42;
+  x->s = "hello";
+  a.store(99, std::memory_order_relaxed); // 1
+  p.store(x, std::memory_order_release); // 2
+}
+
+void use_x()
+{
+  using namespace std::chrono_literals;
+
+  X *x;
+  while (!(x = p.load(std::memory_order_consume))) // 3
+    std::this_thread::sleep_for(1s);
+
+  std::cout << "x->i: " << x->i << std::endl;
+  std::cout << "x->s: " << x->s << std::endl;
+  std::cout << "a.load(): " << a.load() << std::endl;
+
+  assert(x->i == 42); // 4
+  assert(x->s == "hello"); // 5
+  assert(a.load(std::memory_order_relaxed) == 99); // 6
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread t1(create_x);
+  std::thread t2(use_x);
+  t1.join();
+  t2.join();
+
+  return 0;
+}
+```
+```
+// 05_10.cpp
+% ./05_10
+x->i: 42
+x->s: hello
+a.load(): 99
+```
+
+这里的注释6处的断言可能会被触发，因为它使用的是`memory_order_relaxed`。原文中的具体解释如下：
+
+> Even though the store to `a` 1 is sequenced before the store to `p` 2, and the store to `p` is tagged `memory_order_release`, the load of `p` 3 is tagged `memory_order_consume`. This means that the store to `p` only happens-before those expressions that are dependent on the value loaded from `p`. This means that the asserts on the data members of the `X` structure 4, 5 are guaranteed not to fire, because the load of `p` carries a dependency to those expressions through the variable `x`. On the other hand, the assert on the value of `a` 6 may or may not fire; this operation isn’t dependent on the value loaded from `p`, and so there’s no guarantee on the value that’s read. This is particularly apparent because it’s tagged with `memory_order_relaxed`, as you’ll see.
+
+关于`std::kill_dependency()`的理解，见原文P140，反正我目前是没有看懂。
+
+#### 释放队列与同步（Release sequences and synchronizes-with）
+
+本段没看懂，但是自测书中的代码可能会让我明白一些什么，补全书中代码如下：
+
+```
+// 05_11.cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <vector>
+#include <chrono>
+
+std::vector<int> queue_data;
+std::atomic<int> count;
+
+void wait_for_more_items(int tid)
+{
+  using namespace std::chrono_literals;
+  std::cout << "thread" << tid << ": wait_for_more_items() wait 3s"
+            << std::endl;
+  std::this_thread::sleep_for(3s);
+}
+
+void process(int val, int tid)
+{
+  std::cout << "thread" << tid << ": process(" << val << ")"
+            << std::endl;
+}
+
+void populate_queue()
+{
+  const unsigned number_of_items = 20;
+  queue_data.clear();
+
+  for (unsigned i = 0; i < number_of_items; ++i) {
+    queue_data.push_back(i);
+  }
+
+  count.store(number_of_items, std::memory_order_release);
+}
+
+void consume_queue_items(int tid)
+{
+  while (true) {
+    int item_index;
+
+    if ((item_index = count.fetch_sub(1, std::memory_order_acquire)) <= 0) {
+      wait_for_more_items(tid);
+      continue;
+    }
+
+    process(queue_data[item_index - 1], tid);
+  }
+}
+
+int main(int argc, char *argv[])
+{
+  std::thread a(populate_queue);
+  std::thread b(consume_queue_items, 1);
+  std::thread c(consume_queue_items, 2);
+  a.join();
+  b.join();
+  c.join();
+
+  return 0;
+}
+```
+```
+// output
+% ./05_11
+thread2: wait_for_more_items() wait 3s
+thread1: wait_for_more_items() wait 3s
+thread1: process(19)
+thread1: process(18)
+thread1: process(17)
+thread1: process(16)
+thread1: process(15)
+thread1: process(14)
+thread1: process(13)
+thread1: process(12)
+thread1: process(11)
+thread1: process(10)
+thread1: process(9)
+thread1: process(8)
+thread1: process(7)
+thread1: process(6)
+thread1: process(5)
+thread1: process(4)
+thread1: process(3)
+thread1: process(2)
+thread1: process(1)
+thread1: process(0)
+thread1: wait_for_more_items() wait 3s
+thread2: wait_for_more_items() wait 3s
+thread2: wait_for_more_items() wait 3s
+thread1: wait_for_more_items() wait 3s
+```
+```
+// output
+% ./05_11
+thread2: wait_for_more_items() wait 3s
+thread1: wait_for_more_items() wait 3s
+thread2: process(19)
+thread2: process(18)
+thread2: process(17)
+thread2: process(16)
+thread2: process(15)
+thread2: process(14)
+thread2: process(13)
+thread2: process(12)
+thread2: process(11)
+thread2: process(10)
+thread2: process(9)
+thread2: process(8)
+thread2: process(7)
+thread2: process(6)
+thread2: process(5)
+thread2: process(4)
+thread2: process(3)
+thread2: process(2)
+thread2: process(1)
+thread2: process(0)
+thread2: wait_for_more_items() wait 3s
+thread1: wait_for_more_items() wait 3s
+thread2: wait_for_more_items() wait 3s
+thread1: wait_for_more_items() wait 3s
+```
+
+<u>这个中文翻译真的不能再看了，都翻译错了，还是老老实实的看英文吧！</u>
+
+这里的意思我大概知道了：当只有一个线程读时是`fetch_sub()`是同步的，__但是当两个线程时，第二个线程的`fetch_sub()`看到的修改值是第一个线程修改的而不是`store`修改的__。
+
+> Without the rule about the release sequence, this second thread wouldn’t have a happens-before relationship with the first thread, and it wouldn’t be safe to read the shared buffer unless the first `fetch_sub()` also had `memory_order_release` semantics, which would introduce unnecessary synchronization between the two consumer threads. Without the release sequence rule or `memory_order_release` on the `fetch_sub` operations, there would be nothing to require that the stores to the `queue_data` were visible to the second consumer, and you would have a data race. Thankfully, the first `fetch_sub()` does participate in the release sequence, and so the `store()` synchronizes-with the second `fetch_sub()`. There’s still no synchronizes-with relationship between the two consumer threads.
+
+我的翻译：没有“release sequence”的规则限制，那么第二个线程与第一个线程之间不存在“happens-before”关系，这样第二个线程读共享数据时是不安全的，除非第一个线程的`fetch_sub()`也是`memory_order_release`语义，这将引进不必要的同步在两个线程之间。没有“release sequence”规则或者`fetch_sub()`操作上没有指定为`memory_order_release`，这样就无需要求`queue_data`的存储对第二个线程可见，这就产生了数据竞争。幸运的是，第一个线程`fetch_sub()`确实参与了“release sequence”，因此`store()`与第二线程个fetch_sub()同步。两个线程之间仍然没有同步关系。
+
+至此，本小节内容仍然没有看懂。
