@@ -105,6 +105,12 @@
                 - [TRANSITIVE SYNCHRONIZATION WITH ACQUIRE-RELEASE ORDERING](#transitive-synchronization-with-acquire-release-ordering)
                 - [DATA DEPENDENCY WITH ACQUIRE-RELEASE ORDERING AND MEMORY_ORDER_CONSUME](#data-dependency-with-acquire-release-ordering-and-memoryorderconsume)
             - [释放队列与同步（Release sequences and synchronizes-with）](#释放队列与同步release-sequences-and-synchronizes-with)
+- [<2019-04-23 周二> 《C++并发编程实战》读书笔记（十四）](#2019-04-23-周二-c并发编程实战读书笔记十四)
+    - [Chapter 6: Designing lock-based concurrent data structures（一）](#chapter-6-designing-lock-based-concurrent-data-structures一)
+        - [What does it mean to design for concurrency?](#what-does-it-mean-to-design-for-concurrency)
+            - [Guidelines for designing data structures for concurrency](#guidelines-for-designing-data-structures-for-concurrency)
+        - [Lock-based concurrent data structures（一）](#lock-based-concurrent-data-structures一)
+            - [A thread-safe stack using locks](#a-thread-safe-stack-using-locks)
 
 <!-- markdown-toc end -->
 
@@ -112,7 +118,7 @@
 
 ## 第1章 你好，C++的并发世界
 
-这章内容看得很累，好多地方读不懂，不知道想表达什么，书中有下面这段代码：
+这章内容看得很累，好多地方读不懂，翻译的也不好，不知道想表达什么，书中有下面这段代码：
 
 ```
 // 01_01.cpp
@@ -151,7 +157,7 @@ collect2: error: ld returned 1 exit status
 collect2: error: ld returned 1 exit status
 ```
 
-**使用下面的命令可以编译通过，必须要加上“-pthread”参数。**
+**使用下面的命令可以编译通过，必须要加上`-pthread`参数。**
 
 ```
 % g++ 01_01.cpp -pthread
@@ -1782,6 +1788,8 @@ int main(int argc, char *argv[])
 
 一个简单的实现线程安全的堆栈，如下：
 
+<span id="03_05_cpp"></span>
+
 ```
 // 03_05.cpp
 #include <exception>
@@ -2284,6 +2292,8 @@ process(9)
 #### 使用条件变量构建线程安全队列
 
 使用条件变量的线程安全队列（完整版）：
+
+<span id="04_02_cpp"></span>
 
 ```
 // 04_02.cpp
@@ -3417,7 +3427,7 @@ int main(int argc, char *argv[])
 
 现在来看看“happens-before”和“synchronizes-with”。
 
-> The write of the data 3 happens-before the write to the data_ready flag 4, and the read of the flag 1 happens-before the read of the data 2. When the value read from data_ready 1 is true, the write synchronizes-with that read, creating a happens-before relationship. Because happens-before is transitive, the write to the data 3 happens-before the write to the flag 4, which happens-before the read of the true value from the flag 1, which happens-before the read of the data 2, and you have an enforced ordering: the write of the data happens-before the read of the data and everything is OK.
+> The write of the data 3 happens-before the write to the `data_ready` flag 4, and the read of the flag 1 happens-before the read of the data 2. When the value read from `data_ready` 1 is true, the write synchronizes-with that read, creating a happens-before relationship. Because happens-before is transitive, the write to the data 3 happens-before the write to the flag 4, which happens-before the read of the `true` value from the flag 1, which happens-before the read of the data 2, and you have an enforced ordering: the write of the data happens-before the read of the data and everything is OK.
 
 看了上面的内容再结合[关于对`std::memory_order`的理解（一）](#关于对stdmemoryorder的理解一)就可以更好的理解“happens-before”和“synchronizes-with”了。
 
@@ -3427,7 +3437,7 @@ int main(int argc, char *argv[])
 
 #### 先行发生（The happens-before relationship）
 
-> The happens-before relationship is the basic building block of operation ordering in a program; it specifies which operations see the effects of which other operations. For a single thread, it’s largely straightforward: if one operation is sequenced before another, then it also happens-before it. This means that if one operation (A) occurs in a statement prior to another (B) in the source code, then A happens-before B. You saw that in "05_02.cpp": the write to data 3 happens-before the write to data_ready 4. If the operations occur in the same statement, in general there’s no happens-before relationship between them, because they’re unordered. This is just another way of saying that the ordering is unspecified. You know that the program in the following listing will output “1,2” or “2,1”, but it’s unspecified which, because the order of the two calls to `get_num()`is unspecified.
+> The happens-before relationship is the basic building block of operation ordering in a program; it specifies which operations see the effects of which other operations. For a single thread, it’s largely straightforward: if one operation is sequenced before another, then it also happens-before it. This means that if one operation (A) occurs in a statement prior to another (B) in the source code, then A happens-before B. You saw that in "05_02.cpp": the write to `data` 3 happens-before the write to `data_ready` 4. If the operations occur in the same statement, in general there’s no happens-before relationship between them, because they’re unordered. This is just another way of saying that the ordering is unspecified. You know that the program in the following listing will output “1,2” or “2,1”, but it’s unspecified which, because the order of the two calls to `get_num()`is unspecified.
 
 ```
 // 05_03.cpp
@@ -4254,3 +4264,99 @@ thread1: wait_for_more_items() wait 3s
 我的翻译：没有“release sequence”的规则限制，那么第二个线程与第一个线程之间不存在“happens-before”关系，这样第二个线程读共享数据时是不安全的，除非第一个线程的`fetch_sub()`也是`memory_order_release`语义，这将引进不必要的同步在两个线程之间。没有“release sequence”规则或者`fetch_sub()`操作上没有指定为`memory_order_release`，这样就无需要求`queue_data`的存储对第二个线程可见，这就产生了数据竞争。幸运的是，第一个线程`fetch_sub()`确实参与了“release sequence”，因此`store()`与第二线程个fetch_sub()同步。两个线程之间仍然没有同步关系。
 
 至此，本小节内容仍然没有看懂。
+
+# <2019-04-23 周二> 《C++并发编程实战》读书笔记（十四）
+
+## Chapter 6: Designing lock-based concurrent data structures（一）
+
+### What does it mean to design for concurrency?
+
+#### Guidelines for designing data structures for concurrency
+
+略
+
+### Lock-based concurrent data structures（一）
+
+#### A thread-safe stack using locks
+
+补全书中代码如下：
+
+```
+// 06_01.cpp
+#include <iostream>
+#include <exception>
+#include <stack>
+#include <mutex>
+#include <memory>
+
+struct empty_stack : std::exception
+{
+  const char *what() const throw()
+  {
+    return "empty stack";
+  }
+};
+
+template<typename T>
+class threadsafe_stack
+{
+private:
+  std::stack<T> data;
+  mutable std::mutex m;
+
+public:
+  threadsafe_stack() {}
+
+  threadsafe_stack(const threadsafe_stack &other)
+  {
+    std::lock_guard<std::mutex> lock(other.m);
+    data = other.data;
+  }
+
+  threadsafe_stack &operator=(const threadsafe_stack &) = delete;
+
+  void push(T new_value)
+  {
+    std::lock_guard<std::mutex> lock(m);
+    data.push(std::move(new_value)); // 1
+  }
+
+  std::shared_ptr<T> pop()
+  {
+    std::lock_guard<std::mutex> lock(m);
+    if (data.empty()) {
+      throw empty_stack(); // 2
+    }
+
+    const std::shared_ptr<T>
+      res(std::make_shared<T>(std::move(data.top()))); // 3
+
+    data.pop(); // 4
+    return res;
+  }
+
+  void pop(T &value)
+  {
+    std::lock_guard<std::mutex> lock(m);
+    if (data.empty()) {
+      throw empty_stack();
+    }
+
+    value = std::move(data.top()); // 5
+    data.pop(); // 6
+  }
+
+  bool empty() const
+  {
+    std::lock_guard<std::mutex> lock(m);
+    return data.empty();
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+这里的代码与“[03_05.cpp](#03_05_cpp)”稍微有点区别，原文解释了上面的代码是如何做到线程安全和异常安全的，解释的还是很清楚的，请见英文版的P152。
