@@ -111,6 +111,11 @@
             - [Guidelines for designing data structures for concurrency](#guidelines-for-designing-data-structures-for-concurrency)
         - [Lock-based concurrent data structures（一）](#lock-based-concurrent-data-structures一)
             - [A thread-safe stack using locks](#a-thread-safe-stack-using-locks)
+- [<2019-04-25 周四> 《C++并发编程实战》读书笔记（十五）](#2019-04-25-周四-c并发编程实战读书笔记十五)
+    - [Chapter 6: Designing lock-based concurrent data structures（二）](#chapter-6-designing-lock-based-concurrent-data-structures二)
+        - [Lock-based concurrent data structures（二）](#lock-based-concurrent-data-structures二)
+            - [A thread-safe queue using locks and condition variables](#a-thread-safe-queue-using-locks-and-condition-variables)
+    - [`const std::shared_ptr<>`与`std::shared_ptr<> const`](#const-stdsharedptr与stdsharedptr-const)
 
 <!-- markdown-toc end -->
 
@@ -4360,3 +4365,267 @@ int main(int argc, char *argv[])
 ```
 
 这里的代码与“[03_05.cpp](#03_05_cpp)”稍微有点区别，原文解释了上面的代码是如何做到线程安全和异常安全的，解释的还是很清楚的，请见英文版的P152。
+
+# <2019-04-25 周四> 《C++并发编程实战》读书笔记（十五）
+
+## Chapter 6: Designing lock-based concurrent data structures（二）
+
+### Lock-based concurrent data structures（二）
+
+#### A thread-safe queue using locks and condition variables
+
+补全书中代码如下：
+
+```
+// 06_02.cpp
+#include <iostream>
+#include <queue>
+#include <mutex>
+#include <memory>
+#include <condition_variable>
+
+template<typename T>
+class threadsafe_queue
+{
+private:
+  mutable std::mutex mut;
+  std::queue<T> data_queue;
+  std::condition_variable data_cond;
+
+public:
+  threadsafe_queue() {}
+
+  void push(T new_value)
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    data_queue.push(std::move(new_value));
+    data_cond.notify_one(); // 1
+  }
+
+  void wait_and_pop(T &value) // 2
+  {
+    std::unique_lock<std::mutex> lk(mut);
+    data_cond.wait(lk, [this]{return !data_queue.empty();});
+    value = std::move(data_queue.front());
+    data_queue.pop();
+  }
+
+  std::shared_ptr<T> wait_and_pop() // 3
+  {
+    std::unique_lock<std::mutex> lk(mut);
+    data_cond.wait(lk, [this]{return !data_queue.empty();}); // 4
+    std::shared_ptr<T>
+      res(std::make_shared<T>(std::move(data_queue.front())));
+    data_queue.pop();
+    return res;
+  }
+
+  bool try_pop(T &value)
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    if (data_queue.empty()) {
+      return false;
+    }
+
+    value = std::move(data_queue.front());
+    data_queue.pop();
+    return true;
+  }
+
+  std::shared_ptr<T> try_pop()
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    if (data_queue.empty()) {
+      return std::shared_ptr<T>(); // 5
+    }
+
+    std::shared_ptr<T>
+      res(std::make_shared<T>(std::move(data_queue.front())));
+    data_queue.pop();
+    return res;
+  }
+
+  bool empty() const
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    return data_queue.empty();
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+这里的代码与“[04_02.cpp](#04_02_cpp)”几乎相同，关于代码的解释还是见原文P156。可以从书中了解到在异常安全方面，上面的代码可能会有小小的转折（There’s a slight twist），当一个条目被推入队列的时候，有多个线程在等待时，只能有一个线程被`data_cond.notify_one()`唤醒，如果被唤醒的这个线程在`wait_and_pop()`中抛出了一个异常，比如在注释4处，当新`std::shared_ptr<>`被构造，其它线程都不会被唤醒。如果这个不能被接受，那么可以使用`data_cond.notify_all()`唤醒所有等待的线程，但是需要付出一点代价，就是当队列仍为空时，其它线程还得回去继续休眠。
+
+第二种方法：在`wait_and_pop()`中如果发生异常的话调用`notify_one()`，这样的话另外的线程就可以获得被唤醒的机会。
+
+第三种方法：将`std::shared_ptr<>`初始化移动到`push()`调用中并存储`std::shared_ptr<>`实例而不是直接的数据值。将`std::shared_ptr<>`复制出内部`std::queue<>`然后不能抛出异常，所以`wait_and_pop()`再次安全。代码如下：
+
+```
+// 06_03.cpp
+#include <iostream>
+#include <queue>
+#include <mutex>
+#include <memory>
+#include <condition_variable>
+
+template<typename T>
+class threadsafe_queue
+{
+private:
+  mutable std::mutex mut;
+  std::queue<std::shared_ptr<T> > data_queue;
+  std::condition_variable data_cond;
+
+public:
+  threadsafe_queue() {}
+
+  void wait_and_pop(T &value)
+  {
+    std::unique_lock<std::mutex> lk(mut);
+    data_cond.wait(lk, [this]{return !data_queue.empty();});
+    value = std::move(*data_queue.front()); // 1
+    data_queue.pop();
+  }
+
+  bool try_pop(T &value)
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    if (data_queue.empty()) {
+      return false;
+    }
+
+    value = std::move(*data_queue.front()); // 2
+    data_queue.pop();
+    return true;
+  }
+
+  std::shared_ptr<T> wait_and_pop()
+  {
+    std::unique_lock<std::mutex> lk(mut);
+    data_cond.wait(lk, [this]{return !data_queue.empty();});
+    std::shared_ptr<T> res = data_queue.front(); // 3
+    data_queue.pop();
+    return res;
+  }
+
+  std::shared_ptr<T> try_pop()
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    if (data_queue.empty()) {
+      return std::shared_ptr<T>();
+    }
+
+    std::shared_ptr<T> res = data_queue.front(); // 4
+    data_queue.pop();
+    return res;
+  }
+
+  void push(T new_value)
+  {
+    std::shared_ptr<T> data(std::make_shared<T>(std::move(new_value))); // 5
+    std::lock_guard<std::mutex> lk(mut);
+    data_queue.push(data);
+    data_cond.notify_one();
+  }
+
+  bool empty() const
+  {
+    std::lock_guard<std::mutex> lk(mut);
+    return data_queue.empty();
+  }
+};
+
+int main(int argc, char *argv[])
+{
+  return 0;
+}
+```
+
+这个讲得好，作者不提起的话还真不会发现，注释5处构造`std::shared_ptr<>`被放在了锁的外面，正如原文所说，我觉得这也确实是个额外的好处。
+
+> If the data is held by `std::shared_ptr<>`, there’s an additional benefit: the allocation of the new instance can now be done outside the lock in `push()` 5, whereas inlisting 6.2 it had to be done while holding the lock in `pop()`. Because memory allocation is typically quite an expensive operation, this can be very beneficial for the per-formance of the queue, because it reduces the time the mutex is held, allowing otherthreads to perform operations on the queue in the meantime.
+
+## `const std::shared_ptr<>`与`std::shared_ptr<> const`
+
+在抄写《C++并发编程实战》书中代码的时候遇到`std::shared_ptr<> const`我总是习惯性的把它改写成`const std::shared_ptr<>`，今天忽然想起来`const`修饰智能指针与修饰原始指针是不是会不一样？因此写了下面的测试代码来验证一下自己的有关想法。
+
+```
+// 06_else_01.cpp
+#include <iostream>
+#include <memory>
+
+int main(int argc, char *argv[])
+{
+  int val = 1;
+  const int *cp = &val;
+
+  // error: assignment of read-only location ‘* cp’
+  // *cp = 2;
+
+  const std::shared_ptr<int> csp = std::make_shared<int>(1);
+  std::shared_ptr<int> const scp = std::make_shared<int>(2);
+  std::cout << "*csp: " << *csp << std::endl;
+  std::cout << "*scp: " << *scp << std::endl;
+
+  *csp = 3;
+  std::cout << "*csp: " << *csp << std::endl;
+  *scp = 4;
+  std::cout << "*scp: " << *scp << std::endl;
+
+  std::shared_ptr<int> sp = std::make_shared<int>(0);
+
+  // error: no match for ‘operator=’
+  // (operand types are ‘const std::shared_ptr<int>’ and ‘std::shared_ptr<int>’)
+  // csp = sp;
+
+  // error: no match for ‘operator=’
+  // (operand types are ‘const std::shared_ptr<int>’ and ‘std::shared_ptr<int>’)
+  // scp = sp;
+
+  return 0;
+}
+```
+```
+// output
+% ./06_else_01
+*csp: 1
+*scp: 2
+*csp: 3
+*scp: 4
+```
+
+众所周知，上面的代码中`const int *cp = &val;`是修饰指针所指向的值的，所以`*cp = 2;`会报错。而`const std::shared_ptr<int> csp = std::make_shared<int>(1);`与`const int *cp = &val;`不同，因为`*csp = 3;`没有报错，而且成功的将值修改成功，修改为`3`，同样`std::shared_ptr<int> const scp = std::make_shared<int>(2);`的`*scp = 4;`也是成功的，从这点来看`const std::shared_ptr<>`与`std::shared_ptr<> const`应该是等价的，但是`const`修饰智能指针与修饰原始指针是不一样的。
+
+不解的是从`csp = sp;`和`scp = sp;`的报错信息来看它们编译不通过的原因与`const`没有关系，而是因为没有找到合适的`operator=`函数。但是从文档来看`std::shared_ptr<>`确实可以相互赋值，因此有下面的测试代码：
+
+```
+// 06_else_02.cpp
+#include <iostream>
+#include <memory>
+
+int main(int argc, char *argv[])
+{
+  std::shared_ptr<int> sp1 = std::make_shared<int>(1);
+  std::shared_ptr<int> sp2 = std::make_shared<int>(2);
+  std::cout << "*sp1: " << *sp1 << std::endl;
+  std::cout << "*sp2: " << *sp2 << std::endl;
+
+  sp1 = sp2;
+  std::cout << "*sp1: " << *sp1 << std::endl;
+
+  return 0;
+}
+```
+```
+// output
+% ./06_else_02
+*sp1: 1
+*sp2: 2
+*sp1: 2
+```
+
+因此目前的总结就是：__`const std::shared_ptr<>`和`std::shared_ptr<> const`是等价的，但是`const std::shared_ptr<>`与`const int *`是完全不同的__。
