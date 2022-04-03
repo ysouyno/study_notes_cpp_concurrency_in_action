@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
 
 链接出错，如下：
 
-``` shellsessiom
+``` shellsession
 % g++ 01_01.cpp
 /usr/bin/ld: /tmp/ccWuVkAr.o: in function `std::thread::thread<void (&)(), , void>(void (&)())':
 01_01.cpp:(.text._ZNSt6threadC2IRFvvEJEvEEOT_DpOT0_[_ZNSt6threadC5IRFvvEJEvEEOT_DpOT0_]+0x2f): undefined reference to `pthread_create'
