@@ -74,14 +74,14 @@
             - [修改顺序](#修改顺序)
         - [C++中的原子操作和原子类型](#c中的原子操作和原子类型)
             - [标准原子类型](#标准原子类型)
-            - [`std::atomic_flag`的相关操作](#stdatomicflag的相关操作)
+            - [`std::atomic_flag`的相关操作](#stdatomic_flag的相关操作)
             - [`std::atomic`的相关操作](#stdatomic的相关操作)
             - [`std::atomic<T*>`指针运算](#stdatomict指针运算)
             - [标准的原子整形的相关操作](#标准的原子整形的相关操作)
             - [`std::atomic<>`主要类的模板](#stdatomic主要类的模板)
             - [原子操作的释放函数](#原子操作的释放函数)
 - [<2019-04-10 周三> 《C++并发编程实战》读书笔记（十一）](#2019-04-10-周三-c并发编程实战读书笔记十一)
-    - [关于对`std::memory_order`的理解（一）](#关于对stdmemoryorder的理解一)
+    - [关于对`std::memory_order`的理解（一）](#关于对stdmemory_order的理解一)
         - [Happens-before关系](#happens-before关系)
         - [Synchronizes-with关系](#synchronizes-with关系)
     - [第5章 C++内存模型和原子类型操作（二）](#第5章-c内存模型和原子类型操作二)
@@ -103,7 +103,7 @@
         - [同步操作和强制排序（三）](#同步操作和强制排序三)
             - [原子操作的内存顺序（Memory ordering for atomic operations）（三）](#原子操作的内存顺序memory-ordering-for-atomic-operations三)
                 - [TRANSITIVE SYNCHRONIZATION WITH ACQUIRE-RELEASE ORDERING](#transitive-synchronization-with-acquire-release-ordering)
-                - [DATA DEPENDENCY WITH ACQUIRE-RELEASE ORDERING AND MEMORY_ORDER_CONSUME](#data-dependency-with-acquire-release-ordering-and-memoryorderconsume)
+                - [DATA DEPENDENCY WITH ACQUIRE-RELEASE ORDERING AND MEMORY_ORDER_CONSUME](#data-dependency-with-acquire-release-ordering-and-memory_order_consume)
             - [释放队列与同步（Release sequences and synchronizes-with）](#释放队列与同步release-sequences-and-synchronizes-with)
 - [<2019-04-23 周二> 《C++并发编程实战》读书笔记（十四）](#2019-04-23-周二-c并发编程实战读书笔记十四)
     - [Chapter 6: Designing lock-based concurrent data structures（一）](#chapter-6-designing-lock-based-concurrent-data-structures一)
@@ -115,7 +115,7 @@
     - [Chapter 6: Designing lock-based concurrent data structures（二）](#chapter-6-designing-lock-based-concurrent-data-structures二)
         - [Lock-based concurrent data structures（二）](#lock-based-concurrent-data-structures二)
             - [A thread-safe queue using locks and condition variables](#a-thread-safe-queue-using-locks-and-condition-variables)
-    - [`const std::shared_ptr<>`与`std::shared_ptr<> const`](#const-stdsharedptr与stdsharedptr-const)
+    - [`const std::shared_ptr<>`与`std::shared_ptr<> const`](#const-stdshared_ptr与stdshared_ptr-const)
 
 <!-- markdown-toc end -->
 
@@ -125,7 +125,7 @@
 
 这章内容看得很累，好多地方读不懂，翻译的也不好，不知道想表达什么，书中有下面这段代码：
 
-```
+``` c++
 // 01_01.cpp
 #include <iostream>
 #include <thread>
@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
 
 链接出错，如下：
 
-```
+``` shellsessiom
 % g++ 01_01.cpp
 /usr/bin/ld: /tmp/ccWuVkAr.o: in function `std::thread::thread<void (&)(), , void>(void (&)())':
 01_01.cpp:(.text._ZNSt6threadC2IRFvvEJEvEEOT_DpOT0_[_ZNSt6threadC5IRFvvEJEvEEOT_DpOT0_]+0x2f): undefined reference to `pthread_create'
@@ -155,7 +155,7 @@ collect2: error: ld returned 1 exit status
 
 为什么`std::thread`需要去链接`pthread_create`呢？标准库的东西还得依赖平台支持吗？即使使用`g++ -std=c++11 01_01.cpp`进行编译也同样出错。
 
-```
+``` shellsession
 % g++ -std=c++11 01_01.cpp
 /usr/bin/ld: /tmp/cchBMGkl.o: in function `std::thread::thread<void (&)(), , void>(void (&)())':
 01_01.cpp:(.text._ZNSt6threadC2IRFvvEJEvEEOT_DpOT0_[_ZNSt6threadC5IRFvvEJEvEEOT_DpOT0_]+0x2f): undefined reference to `pthread_create'
@@ -164,7 +164,7 @@ collect2: error: ld returned 1 exit status
 
 **使用下面的命令可以编译通过，必须要加上`-pthread`参数。**
 
-```
+``` shellsession
 % g++ 01_01.cpp -pthread
 ```
 
@@ -204,7 +204,7 @@ gcc version 8.2.1 20181127 (GCC)
 
 首先这里可以正确执行线程函数，`background_task`是一个**函数对象**，因为它的内部重载了括号操作符`operator()`。
 
-```
+``` c++
 #include <iostream>
 #include <thread>
 
@@ -228,16 +228,12 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
-operator()
-```
 
 <span id="background_task"></span>
 
 下面的代码编译出错，因为**如果你传递了一个临时变量，而不是一个命名变量，C++编译器会将其解析为函数声明，而不是对象定义**，通过下面的编译出错信息确实可以看到是这样子的。
 
-```
+``` c++
 #include <iostream>
 #include <thread>
 
@@ -259,7 +255,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
+
+``` shellsession
 % g++ 02_else_01.cpp -pthread
 02_else_01.cpp: In function ‘int main(int, char**)’:
 02_else_01.cpp:27:13: error: request for member ‘join’ in ‘my_thread’, which is of non-class type ‘std::thread(background_task (*)())’
@@ -269,7 +266,7 @@ int main(int argc, char *argv[])
 
 可以通过下面两种方法来解决上面的临时变量问题，将对象的定义改为下面二者之一即可。
 
-```
+``` c++
 // 使用多组括号
 std::thread my_thread((background_task()));
 
@@ -281,7 +278,7 @@ std::thread my_thread{background_task()};
 
 完整测试代码如下：
 
-```
+``` c++
 // 02_else_01.cpp
 #include <iostream>
 #include <thread>
@@ -325,7 +322,7 @@ int main(int argc, char *argv[])
 
 因为临时变量的原因导致`std::thread my_thread(background_task());`变成了函数声明的问题，可以通过`std::move`的**右值引用**来解决。
 
-```
+``` c++
 // 02_else_02.cpp
 #include <iostream>
 #include <thread>
@@ -347,14 +344,14 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
+
 ```
-// output
 operator()
 ```
 
 继续进行下面的内容，下面这段代码使线程分离执行`detach()`，访问局部变量，可能引起**悬挂引用**问题。
 
-```
+``` c++
 // 02_01.cpp
 #include <iostream>
 #include <thread>
@@ -396,7 +393,7 @@ int main(int argc, char *argv[])
 
 当倾向于在无异常情况下使用`join()`时，需要在异常处理过程中调用`join()`，从而避免生命周期的问题。
 
-```
+``` c++
 // 02_02.cpp
 #include <iostream>
 #include <thread>
@@ -445,7 +442,7 @@ int main(int argc, char *argv[])
 
 <span id="thread_guard"></span>
 
-```
+``` c++
 // 02_03.cpp
 #include <iostream>
 #include <thread>
@@ -521,7 +518,7 @@ int main(int argc, char *argv[])
 
 补全书中代码如下：
 
-```
+``` c++
 // 02_else_03.cpp
 #include <iostream>
 #include <string>
@@ -541,8 +538,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_else_03
 i: 3
 s: hello
@@ -552,7 +549,7 @@ s: hello
 
 这里有个问题留着下次解决：上面的代码如果将`t.join();`注释掉程序运行崩溃，我想知道原因，输出如下：
 
-```
+``` shellsession
 % ./02_else_03
 terminate called without an active exception
 [1]    6430 abort (core dumped)  ./a.out
@@ -562,7 +559,7 @@ terminate called without an active exception
 
 补全书中代码如下：
 
-```
+``` c++
 // 02_else_04.cpp
 #include <iostream>
 #include <string>
@@ -589,8 +586,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_else_04
 i: 3
 s: 23
@@ -598,7 +595,7 @@ s: 23
 
 我将书中的代码的`detach()`改为了`join()`，不然我无法看到输出，**函数有很大的可能会在字面值转化成`std::string`对象之前崩溃，不懂什么意思**，解决方案是传递到`std::string`构造函数之前将字面值转化为`std::string`对象，修改上面的代码如下：
 
-```
+``` c++
 // 02_else_05.cpp
 #include <iostream>
 #include <string>
@@ -634,8 +631,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_else_04
 i: 3
 s: 23
@@ -649,7 +646,7 @@ s: 32
 
 补全书中代码，不知道为啥，下面这段代码编译有问题，一堆错误，先贴上再说。
 
-```
+``` c++
 // 02_else_05.cpp
 #include <iostream>
 #include <thread>
@@ -708,7 +705,7 @@ int main(int argc, char *argv[])
 
 仅当通过传值（by value）方式传递对象或传递常量引用（reference-to-const）参数时，才会发生这些类型转换，当传递一个非常量引用（reference-to-non-const）参数对象，就不会发生，如下：
 
-```
+``` c++
 #include "stdafx.h"
 #include <string>
 
@@ -729,7 +726,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 代码改成如下，果然编译通过：
 
-```
+``` c++
 #include "stdafx.h"
 #include <string>
 
@@ -757,7 +754,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 前段时间写代码一直使用常量引用，已经习惯了，但是其实常量引用会造成临时对象的生成导致影响效率，今天写个测试代码再理解一次。
 
-```
+``` c++
 #include <iostream>
 
 class class_string
@@ -807,8 +804,8 @@ int main()
 	return 0;
 }
 ```
+
 ```
-// output
 class_string(const char *value)
 class_string(const char *value)
 ~class_string()
@@ -819,7 +816,7 @@ class_string(const char *value)
 
 那么添上`explicit`后会怎么样呢？
 
-```
+``` c++
 #include <iostream>
 
 class class_string
@@ -869,7 +866,8 @@ int main()
 	return 0;
 }
 ```
-```
+
+``` shellsession
 error C2664: 'void test_ref_to_const(const class_string &)':
 cannot convert argument 1 from 'char [6]' to 'const class_string &'
 ```
@@ -886,7 +884,7 @@ cannot convert argument 1 from 'char [6]' to 'const class_string &'
 
 越看问题越多，还是[传引用（一）](#传引用一)中提到的代码，通过将`update_data_for_widget`的参数修改为传值可以编译成功，但是输出结果让人费解，完整的测试代码如下：
 
-```
+``` c++
 // 02_else_05.cpp
 #include <iostream>
 #include <thread>
@@ -940,7 +938,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
+
+``` shellsession
 % ./02_else_05
 widget_data()
 ~widget_data()
@@ -960,13 +959,13 @@ error C2672: 'std::invoke': no matching overloaded function found
 
 上面信息好像是在说编译器是在找
 
-```
+``` c++
 void update_data_for_widget(widget_id w, widget_data data);
 ```
 
 而不是在找
 
-```
+``` c++
 void update_data_for_widget(widget_id w, widget_data &data);
 ```
 
@@ -982,7 +981,7 @@ void update_data_for_widget(widget_id w, widget_data &data);
 
 为了确定不是我上面为了补全书中代码而写出来的问题，我将“02_else_03.cpp”的代码修改为，如下：
 
-```
+``` c++
 #include <iostream>
 #include <string>
 #include <thread>
@@ -1004,7 +1003,7 @@ int main(int argc, char *argv[])
 
 上面的代码，将`f`函数的第二个参数去掉`const`即修改为非常量引用，编译时果然出错，与“02_else_05.cpp”的出错信息完全一样，所以应该确定是`std::thread`我没有使用正确，即`std::thread`不能这么直接传引用，需要使用`std::ref()`或者`std::cref()`，因为上面代码的`"hello"`是常量字符串，所以你会发现即使使用了`std::ref()`或者`std::cref()`也同样报相同的错误，“02_else_05.cpp”中正确使用引用的方法如下：
 
-```
+``` c++
 // 02_else_05.cpp
 #include <iostream>
 #include <thread>
@@ -1059,8 +1058,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_else_05
 widget_data()
 data.id: 3
@@ -1071,7 +1070,7 @@ data.id: 3
 
 可能提供一个成员函数指针作为线程函数，并提供一个合适的对象指针作为线程函数的第一个参数：
 
-```
+``` c++
 // 02_else_06.cpp
 #include <iostream>
 #include <thread>
@@ -1094,8 +1093,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_else_06
 X::do_lengthy_work() called
 ```
@@ -1114,7 +1113,7 @@ C++标准库中有很多资源占有（resource-owning）类型，比如`std::if
 
 `std::thread`支持移动，就意味着线程的所有权可以在函数外进行转移，补全书中代码如下：
 
-```
+``` c++
 // 02_05_01.cpp
 #include <iostream>
 #include <thread>
@@ -1153,8 +1152,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_05_01
 some_function
 some_other_function(42)
@@ -1166,7 +1165,7 @@ some_other_function(42)
 
 当所有权可以在函数内部传递，就允许`std::thread`实例可作为参数进行传递，代码如下：
 
-```
+``` c++
 #include <iostream>
 #include <thread>
 
@@ -1194,8 +1193,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_05_02
 some_function
 some_function
@@ -1213,7 +1212,7 @@ some_function
 
 为了确保线程程序退出前完成，下面代码里定义了`scoped_thread`类，补全书中代码如下
 
-```
+``` c++
 // 02_06_01.cpp
 #include <iostream>
 #include <thread>
@@ -1285,7 +1284,7 @@ int main(int argc, char *argv[])
 
 即将`scoped_thread t(std::thread(func(some_local_state)));`修改为`scoped_thread t(std::thread{func(some_local_state)});`
 
-```
+``` c++
 // 02_06_02.cpp
 #include <iostream>
 #include <thread>
@@ -1355,7 +1354,7 @@ int main(int argc, char *argv[])
 
 将`std::thread`放入`std::vector`是向线程自动化管理迈出的第一步：并非为这些线程创建独立的变量，并且将他们直接加入，可以把它们当做一个组
 
-```
+``` c++
 // 02_07.cpp
 #include <iostream>
 #include <vector>
@@ -1389,8 +1388,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_07
 do_work: 4
 do_work: 5
@@ -1418,7 +1417,7 @@ do_work: 18
 
 补全书中代码
 
-```
+``` c++
 // 02_08.cpp
 #include <iostream>
 #include <thread>
@@ -1526,8 +1525,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./02_08
 test_accumulate_block
 sum: 6
@@ -1563,7 +1562,7 @@ sum: 5050
 
 下面这段代码中这个全局的互斥量使得这两个函数中对数据的访问是互斥的：`list_contains()`不可能看到正在被`add_to_list()`修改的列表。但是具有访问能力的指针或引用可以访问（并可能修改）被保护的数据，而不会被互斥锁限制。
 
-```
+``` c++
 // 03_01.cpp
 #include <list>
 #include <mutex>
@@ -1595,7 +1594,7 @@ int main(int argc, char *argv[])
 
 在确保成员函数不会传出指针或引用的同时，检查成员函数是否通过指针或引用的方式来调用也是很重要的（尤其是这个操作不在你的控制下时）。函数可能没在互斥量保护的区域内，存储着指针或者引用，这样就很危险。更危险的是：将保护数据作为一个运行时参数，如同下面代码中所示那样。
 
-```
+``` c++
 // 03_02.cpp
 #include <iostream>
 #include <string>
@@ -1658,7 +1657,7 @@ int main(int argc, char *argv[])
 
 补全书中代码，需要注意的是，缺少的代码太多，我只补全了其中需要用到的四个成员函数，只是为了能使代码可以顺利编译，而且此代码也存在内存泄漏。
 
-```
+``` c++
 // 03_03.cpp
 #include <iostream>
 #include <deque>
@@ -1736,7 +1735,7 @@ int main(int argc, char *argv[])
 
 ##### 选项1 传入一个引用
 
-```
+``` c++
 std::vector<int> result;
 some_stack.pop(result);
 ```
@@ -1759,7 +1758,7 @@ some_stack.pop(result);
 
 下面就一个线程安全的堆栈，它是一个**接口没有条件竞争的堆栈类定义**，它实现了**选项1和选项3**：重载了`pop()`，使用一个局部引用去存储弹出值，并返回一个`std::shared_ptr<>`对象。
 
-```
+``` c++
 // 03_04.cpp
 #include <exception>
 #include <memory>
@@ -1795,7 +1794,7 @@ int main(int argc, char *argv[])
 
 <span id="03_05_cpp"></span>
 
-```
+``` c++
 // 03_05.cpp
 #include <exception>
 #include <memory>
@@ -1891,7 +1890,7 @@ int main(int argc, char *argv[])
 
 很幸运，C++标准库有办法解决这个问题，`std::lock`可以一次性锁住多个（两个以上）的互斥量，并且没有副作用（死锁风险）。来看一下下面的代码是怎么在一个简单的交换操作中使用`std::lock`。
 
-```
+``` c++
 // 03_06.cpp
 #include <iostream>
 #include <mutex>
@@ -1940,7 +1939,7 @@ int main(int argc, char *argv[])
 
 那么多建议见原书，下面代码是通过层次锁来避免死锁。
 
-```
+``` c++
 // 03_07.cpp
 #include <iostream>
 #include <mutex>
@@ -2061,8 +2060,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./03_07
 low_level_stuff()
 high_level_stuff(2)
@@ -2079,7 +2078,7 @@ terminate called after throwing an instance of 'std::logic_error'
 
 补全书中代码，用于理解书中所说的：一种使用可能是允许一个函数去锁住一个互斥量，并且将所有权移到调用者上，所以调用者可以在这个锁保护的范围内执行额外的动作。
 
-```
+``` c++
 // 03_else_01.cpp
 #include <iostream>
 #include <mutex>
@@ -2117,8 +2116,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./03_else_01
 prepare_data()
 do_something()
@@ -2130,7 +2129,7 @@ do_something()
 
 #### 锁的粒度
 
-```
+``` c++
 // 03_08.cpp
 #include <mutex>
 
@@ -2188,7 +2187,7 @@ C++标准库对条件变量有两套实现：`std::condition_variable`和`std::c
 
 下面代码使用`std::condition_variable`处理数据等待，补全书中代码如下：
 
-```
+``` c++
 // 04_01.cpp
 #include <iostream>
 #include <mutex>
@@ -2272,8 +2271,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_01
 process(1)
 process(2)
@@ -2300,7 +2299,7 @@ process(9)
 
 <span id="04_02_cpp"></span>
 
-```
+``` c++
 // 04_02.cpp
 #include <queue>
 #include <memory>
@@ -2395,7 +2394,7 @@ int main(int argc, char *argv[])
 
 使用`std::future`从异步任务中获取返回值。如下：
 
-```
+``` c++
 // 04_03.cpp
 #include <iostream>
 #include <future>
@@ -2422,8 +2421,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_03
 do_other_stuff()
 the answer is find_the_answer_to_ltuae()
@@ -2432,7 +2431,7 @@ the answer is find_the_answer_to_ltuae()
 
 使用`std::async`向函数传递参数。如下：
 
-```
+``` c++
 // 04_04.cpp
 #include <iostream>
 #include <string>
@@ -2513,8 +2512,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_04
 baz(x)
 move_only constructor
@@ -2533,7 +2532,7 @@ move_only::operator()
 
 `std::launch::defered`，用来表明函数调用被延迟到`wait()`或`get()`函数调用时才执行，`std::launch::async`表明函数必须在其所在的独立线程上执行，`std::launch::deferred | std::launch::async`表明实现可以选择这两种方式的一种。最后一个选项是默认的。当函数调用被延迟，它可能不会再运行了。如下：
 
-```
+``` c++
 // 在新线程上执行
 auto f6 = std::async(std::launch::async, Y(), 1.2);
 
@@ -2555,7 +2554,7 @@ f7.wait();
 
 使用`std::packaged_task`执行一个图形界面线程，补全书中代码如下：
 
-```
+``` c++
 // 04_05.cpp
 #include <iostream>
 #include <deque>
@@ -2635,8 +2634,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_05
 get_and_process_gui_message()
 test_func()1
@@ -2664,7 +2663,7 @@ get_and_process_gui_message()
 
 补全书中代码如下：
 
-```
+``` c++
 // 04_else_01.cpp
 #include <cmath>
 #include <stdexcept>
@@ -2688,8 +2687,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_else_01
 terminate called after throwing an instance of 'std::out_of_range'
   what():  x < 0
@@ -2728,7 +2727,7 @@ terminate called after throwing an instance of 'std::out_of_range'
 
 快速排序（顺序实现版），补全书中代码如下：
 
-```
+``` c++
 // 04_06.cpp
 #include <iostream>
 #include <list>
@@ -2780,8 +2779,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_06
 1
 2
@@ -2794,7 +2793,7 @@ int main(int argc, char *argv[])
 
 因为还是使用函数化模式，所以使用“期望”很容易将其转化为并行的版本，如下面的程序清单所示。其中的操作与前面相同，不同的是它们现在并行运行。
 
-```
+``` c++
 // 04_07.cpp
 #include <iostream>
 #include <list>
@@ -2852,8 +2851,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_07
 1
 2
@@ -2862,11 +2861,11 @@ int main(int argc, char *argv[])
 5
 ```
 
-上面的代码通过递归调用`parallel_quick_sort()`，你就可以利用可用的硬件并发了。`std::async()`会启动一个新线程，这样当你递归三次时，就会有八个线程在运行了。当任务过多时（已影响性能），__这些任务应该在使用`get()`函数获取的线程上运行，而不是在新线程上运行，这样就能避免任务向线程传递的开销__。值的注意的是，这完全符合`std::async`的实现，为每一个任务启动一个线程（甚至在任务超额时，在`std::launch::deferred`没有明确规定的情况下）；或为了同步执行所有任务（在`std::launch::async`有明确规定的情况下）。当你依赖运行库的自动缩放，建议你去查看一下你的实现文档，了解一下将会有怎么样的行为表现。
+上面的代码通过递归调用`parallel_quick_sort()`，你就可以利用可用的硬件并发了。`std::async()`会启动一个新线程，这样当你递归三次时，就会有八个线程在运行了。当任务过多时（已影响性能），**这些任务应该在使用`get()`函数获取的线程上运行，而不是在新线程上运行，这样就能避免任务向线程传递的开销**。值的注意的是，这完全符合`std::async`的实现，为每一个任务启动一个线程（甚至在任务超额时，在`std::launch::deferred`没有明确规定的情况下）；或为了同步执行所有任务（在`std::launch::async`有明确规定的情况下）。当你依赖运行库的自动缩放，建议你去查看一下你的实现文档，了解一下将会有怎么样的行为表现。
 
 比起使用`std::async()`，你可以写一个`spawn_task()`函数对`std::packaged_task`和`std::thread`做简单的包装，如下的代码所示，你需要为函数结果创建一个`std::packaged_task`对象，可以从这个对象中获取“期望”，或在线程中执行它，返回“期望”。其本身并不提供太多的好处（并且事实上会造成大规模的超额任务），但是它会为转型成一个更复杂的实现铺平道路，将会实现向一个队列添加任务，而后使用线程池的方式来运行它们。使用`std::async`更适合于当你知道你在干什么，并且要完全控制在线程池中构建或执行过任务的线程。
 
-```
+``` c++
 // 04_08.cpp
 #include <iostream>
 #include <list>
@@ -2939,8 +2938,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./04_08
 1
 2
@@ -2951,7 +2950,7 @@ int main(int argc, char *argv[])
 
 这段代码中需要提到的是原书中的代码会产生编译错误：
 
-```
+``` shellsession
 04_08.cpp:8:41: error: type/value mismatch at argument 1 in template parameter list for ‘template<class _Res> class std::future’
  std::future<std::result_of<F(A&&)>::type> spawn_task(F&& f, A&& a)
                                          ^
@@ -2959,7 +2958,7 @@ int main(int argc, char *argv[])
 
 如何修改？需要在`std::result_of`前加上`typename`关键字，参考：[Using C++ template parameter as argument to another template? [duplicate]](https://stackoverflow.com/questions/22355398/using-c-template-parameter-as-argument-to-another-template)，因此需要正确的写法如下：
 
-```
+``` c++
 template<typename F, typename A>
 std::future<typename std::result_of<F(A&&)>::type> spawn_task(F&& f, A&& a)
 {
@@ -2974,7 +2973,7 @@ std::future<typename std::result_of<F(A&&)>::type> spawn_task(F&& f, A&& a)
 
 同时需要注意的是`spawn_task`是如何调用的：
 
-```
+``` c++
 auto new_lower(spawn_task(&parallel_quick_sort<T>, std::move(lower_part)));
 ```
 
@@ -2996,7 +2995,7 @@ CSP（Communicating Sequential Processer）的概念十分简单：当没有共�
 
 分解一个`struct`，展示不同对象的内存位置，补全书中代码如下：
 
-```
+``` c++
 // 05_else_01.cpp
 #include <iostream>
 #include <string>
@@ -3026,7 +3025,7 @@ int main(int argc, char *argv[])
 
 关于宽度为0的位域，借用“[C/C++位域结构深入解析](https://jocent.me/2017/07/24/bit-field-detail.html)”中的代码：
 
-```
+``` c++
 struct BitField_1
 {
   unsigned a : 4; // 在第一个unsigned int中存放，占四位
@@ -3040,7 +3039,7 @@ struct BitField_1
 
 如果不去规定两个不同线程对同一内存地址访问的顺序，那么访问就不是原子的。
 
-当程序中的对同一内存地址中的数据访问存在竞争，你可以使用原子操作来避免未定义行为。当然，这不会影响竞争的产生__原子操作并没有指定访问顺序__但原子操作把程序拉回了定义行为的区域内。
+当程序中的对同一内存地址中的数据访问存在竞争，你可以使用原子操作来避免未定义行为。当然，这不会影响竞争的产生**原子操作并没有指定访问顺序**但原子操作把程序拉回了定义行为的区域内。
 
 #### 修改顺序
 
@@ -3068,7 +3067,7 @@ struct BitField_1
 
 使用`std::atomic_flag`实现自旋互斥锁，补全书中代码如下：
 
-```
+``` c++
 // 05_01.cpp
 #include <iostream>
 #include <atomic>
@@ -3135,7 +3134,7 @@ int main(int argc, char *argv[])
 
 #### `std::atomic`的相关操作
 
-```
+``` c++
 // 05_else_02.cpp
 #include <iostream>
 #include <atomic>
@@ -3164,8 +3163,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_else_02
 x: false, b: false
 x: false, b: true
@@ -3180,7 +3179,7 @@ x: true, b: false
 
 补全书中代码如下：
 
-```
+``` c++
 // 05_else_03.cpp
 #include <iostream>
 #include <atomic>
@@ -3201,15 +3200,15 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_else_03
 x: true, b: true, expected: false
 ```
 
-因为__`compare_exchange_weak()`可以“伪失败”__，所以__这里通常使用一个循环__，补全书中代码如下：
+因为**`compare_exchange_weak()`可以“伪失败”**，所以**这里通常使用一个循环**，补全书中代码如下：
 
-```
+``` c++
 // 05_else_04.cpp
 #include <iostream>
 #include <atomic>
@@ -3231,8 +3230,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_else_04
 b: true, expected: false
 ```
@@ -3249,7 +3248,7 @@ b: true, expected: false
 
 补全书中代码如下：
 
-```
+``` c++
 // 05_else_05.cpp
 #include <iostream>
 #include <atomic>
@@ -3298,8 +3297,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_else_05
 *x: 0
 *p: 2
@@ -3309,7 +3308,7 @@ int main(int argc, char *argv[])
 *(p.load()): 1
 ```
 
-好好看看上面的代码进行理解，__`fetch_add()`返回的是原始值__，即数组的首地址。注意代码`p.fetch_add(2);`中`p`的值发生了变化。
+好好看看上面的代码进行理解，**`fetch_add()`返回的是原始值**，即数组的首地址。注意代码`p.fetch_add(2);`中`p`的值发生了变化。
 
 #### 标准的原子整形的相关操作
 
@@ -3345,7 +3344,7 @@ A、B是两个在多核CPU上执行的操作。如果A happens-before B，那么
 
 仍然是这篇文章：“[C++ Memory Order 与 Atomic 学习小记](https://zhuanlan.zhihu.com/p/31386431)”，有如下测试代码：
 
-```
+``` c++
 // 05_else_06.cpp
 #include <iostream>
 #include <atomic>
@@ -3390,7 +3389,7 @@ int main(int argc, char *argv[])
 
 从不同线程读写变量，补全书中代码如下：
 
-```
+``` c++
 // 05_02.cpp
 #include <iostream>
 #include <vector>
@@ -3444,7 +3443,7 @@ int main(int argc, char *argv[])
 
 > The happens-before relationship is the basic building block of operation ordering in a program; it specifies which operations see the effects of which other operations. For a single thread, it’s largely straightforward: if one operation is sequenced before another, then it also happens-before it. This means that if one operation (A) occurs in a statement prior to another (B) in the source code, then A happens-before B. You saw that in "05_02.cpp": the write to `data` 3 happens-before the write to `data_ready` 4. If the operations occur in the same statement, in general there’s no happens-before relationship between them, because they’re unordered. This is just another way of saying that the ordering is unspecified. You know that the program in the following listing will output “1,2” or “2,1”, but it’s unspecified which, because the order of the two calls to `get_num()`is unspecified.
 
-```
+``` c++
 // 05_03.cpp
 #include <iostream>
 
@@ -3466,8 +3465,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_03
 2, 1
 ```
@@ -3486,7 +3485,7 @@ int main(int argc, char *argv[])
 
 <span id="05_04_cpp"></span>
 
-```
+``` c++
 // 05_04.cpp
 #include <iostream>
 #include <atomic>
@@ -3541,13 +3540,13 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_04
 z: 2
 ```
-```
-// output
+
+``` shellsession
 % ./05_04
 z: 1
 ```
@@ -3576,7 +3575,7 @@ z: 1
 
 <span id="05_05_cpp"></span>
 
-```
+``` c++
 // 05_05.cpp
 #include <iostream>
 #include <atomic>
@@ -3616,8 +3615,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_05
 z: 1
 ```
@@ -3630,7 +3629,7 @@ z: 1
 
 多线程中的松散操作，如下代码所示：
 
-```
+``` c++
 // 05_06.cpp
 #include <iostream>
 #include <thread>
@@ -3722,8 +3721,7 @@ int main(int argc, char *argv[])
 
 输出是可变的，下面的程序可能的输出：
 
-```
-// output
+``` shellsession
 % ./05_06
 (0, 9, 9), (1, 9, 9), (2, 9, 9), (3, 9, 9), (4, 9, 9), (5, 9, 9), (6, 9, 9), (7, 9, 9), (8, 9, 9)
 (0, 0, 0), (0, 1, 1), (0, 2, 1), (0, 3, 1), (0, 4, 1), (0, 5, 1), (0, 6, 1), (0, 7, 1), (0, 8, 1)
@@ -3758,7 +3756,7 @@ int main(int argc, char *argv[])
 
 下面代码是对“[05_04.cpp](#05_04_cpp)”的一次重写，使用“acquire-release semantics”而不是（rather than）“sequentially consistent”，代码如下：
 
-```
+``` c++
 // 05_07.cpp
 #include <iostream>
 #include <atomic>
@@ -3813,13 +3811,13 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_07
 z: 1
 ```
-```
-// output
+
+``` shellsession
 % ./05_07
 z: 2
 ```
@@ -3830,7 +3828,7 @@ z: 2
 
 为了看到“acquire-release”的好处，需要考虑将两个存储放到同一个线程中，就像“[05_05.cpp](#05_05_cpp)”代码中的那样，见下面的代码：
 
-```
+``` c++
 // 05_08.cpp
 #include <iostream>
 #include <atomic>
@@ -3870,7 +3868,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
+
+``` shellsession
 % ./05_08
 z: 1
 ```
@@ -3893,7 +3892,7 @@ z: 1
 
 这里现在有点好理解了，补全书中代码如下：
 
-```
+``` c++
 // 05_09.cpp
 #include <iostream>
 #include <atomic>
@@ -3958,8 +3957,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_09
 data[0]: 42
 data[1]: 97
@@ -3974,7 +3973,7 @@ data[4]: 2003
 
 上面的代码使用了两个变量`sync1`和`sync2`，现在来尝试一下使用一个变量，这样的话就需要用到`std::memory_order_acq_rel`（read-modify-write）和`compare_exchange_strong()`了，补全书中代码如下：
 
-```
+``` c++
 // 05_else_07.cpp
 #include <iostream>
 #include <atomic>
@@ -4044,8 +4043,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_else_07
 data[0]: 42
 data[1]: 97
@@ -4064,7 +4063,7 @@ data[4]: 2003
 
 > One important use for this kind of memory ordering is where the atomic operation loads a pointer to some data. By using `memory_order_consume` on the load and `memory_order_release` on the prior store, you ensure that the pointed-to data is correctly synchronized, without imposing any synchronization requirements on any other nondependent data. The following listing shows an example of this scenario.
 
-```
+``` c++
 // 05_10.cpp
 #include <iostream>
 #include <string>
@@ -4118,8 +4117,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// 05_10.cpp
+
+``` shellsession
 % ./05_10
 x->i: 42
 x->s: hello
@@ -4136,7 +4135,7 @@ a.load(): 99
 
 本段没看懂，但是自测书中的代码可能会让我明白一些什么，补全书中代码如下：
 
-```
+``` c++
 // 05_11.cpp
 #include <iostream>
 #include <atomic>
@@ -4199,8 +4198,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./05_11
 thread2: wait_for_more_items() wait 3s
 thread1: wait_for_more_items() wait 3s
@@ -4229,8 +4228,8 @@ thread2: wait_for_more_items() wait 3s
 thread2: wait_for_more_items() wait 3s
 thread1: wait_for_more_items() wait 3s
 ```
-```
-// output
+
+``` shellsession
 % ./05_11
 thread2: wait_for_more_items() wait 3s
 thread1: wait_for_more_items() wait 3s
@@ -4262,7 +4261,7 @@ thread1: wait_for_more_items() wait 3s
 
 <u>这个中文翻译真的不能再看了，都翻译错了，还是老老实实的看英文吧！</u>
 
-这里的意思我大概知道了：当只有一个线程读时是`fetch_sub()`是同步的，__但是当两个线程时，第二个线程的`fetch_sub()`看到的修改值是第一个线程修改的而不是`store`修改的__。
+这里的意思我大概知道了：当只有一个线程读时是`fetch_sub()`是同步的，**但是当两个线程时，第二个线程的`fetch_sub()`看到的修改值是第一个线程修改的而不是`store`修改的**。
 
 > Without the rule about the release sequence, this second thread wouldn’t have a happens-before relationship with the first thread, and it wouldn’t be safe to read the shared buffer unless the first `fetch_sub()` also had `memory_order_release` semantics, which would introduce unnecessary synchronization between the two consumer threads. Without the release sequence rule or `memory_order_release` on the `fetch_sub` operations, there would be nothing to require that the stores to the `queue_data` were visible to the second consumer, and you would have a data race. Thankfully, the first `fetch_sub()` does participate in the release sequence, and so the `store()` synchronizes-with the second `fetch_sub()`. There’s still no synchronizes-with relationship between the two consumer threads.
 
@@ -4286,7 +4285,7 @@ thread1: wait_for_more_items() wait 3s
 
 补全书中代码如下：
 
-```
+``` c++
 // 06_01.cpp
 #include <iostream>
 #include <exception>
@@ -4376,7 +4375,7 @@ int main(int argc, char *argv[])
 
 补全书中代码如下：
 
-```
+``` c++
 // 06_02.cpp
 #include <iostream>
 #include <queue>
@@ -4464,7 +4463,7 @@ int main(int argc, char *argv[])
 
 第三种方法：将`std::shared_ptr<>`初始化移动到`push()`调用中并存储`std::shared_ptr<>`实例而不是直接的数据值。将`std::shared_ptr<>`复制出内部`std::queue<>`然后不能抛出异常，所以`wait_and_pop()`再次安全。代码如下：
 
-```
+``` c++
 // 06_03.cpp
 #include <iostream>
 #include <queue>
@@ -4553,7 +4552,7 @@ int main(int argc, char *argv[])
 
 在抄写《C++并发编程实战》书中代码的时候遇到`std::shared_ptr<> const`我总是习惯性的把它改写成`const std::shared_ptr<>`，今天忽然想起来`const`修饰智能指针与修饰原始指针是不是会不一样？因此写了下面的测试代码来验证一下自己的有关想法。
 
-```
+``` c++
 // 06_else_01.cpp
 #include <iostream>
 #include <memory>
@@ -4589,8 +4588,8 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./06_else_01
 *csp: 1
 *scp: 2
@@ -4602,7 +4601,7 @@ int main(int argc, char *argv[])
 
 不解的是从`csp = sp;`和`scp = sp;`的报错信息来看它们编译不通过的原因与`const`没有关系，而是因为没有找到合适的`operator=`函数。但是从文档来看`std::shared_ptr<>`确实可以相互赋值，因此有下面的测试代码：
 
-```
+``` c++
 // 06_else_02.cpp
 #include <iostream>
 #include <memory>
@@ -4620,12 +4619,12 @@ int main(int argc, char *argv[])
   return 0;
 }
 ```
-```
-// output
+
+``` shellsession
 % ./06_else_02
 *sp1: 1
 *sp2: 2
 *sp1: 2
 ```
 
-因此目前的总结就是：__`const std::shared_ptr<>`和`std::shared_ptr<> const`是等价的，但是`const std::shared_ptr<>`与`const int *`是完全不同的__。
+因此目前的总结就是：**`const std::shared_ptr<>`和`std::shared_ptr<> const`是等价的，但是`const std::shared_ptr<>`与`const int *`是完全不同的**。
