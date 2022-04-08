@@ -116,6 +116,10 @@
         - [Lock-based concurrent data structures（二）](#lock-based-concurrent-data-structures二)
             - [A thread-safe queue using locks and condition variables](#a-thread-safe-queue-using-locks-and-condition-variables)
     - [`const std::shared_ptr<>`与`std::shared_ptr<> const`](#const-stdshared_ptr与stdshared_ptr-const)
+- [<2022-04-08 Fri> 《C++ Concurrency in Action》读书笔记（十六）](#2022-04-08-fri-c-concurrency-in-action读书笔记十六)
+    - [Chapter 6: Designing lock-based concurrent data structures（三）](#chapter-6-designing-lock-based-concurrent-data-structures三)
+        - [Lock-based concurrent data structures（三）](#lock-based-concurrent-data-structures三)
+            - [A thread-safe queue using fine-grained locks and condition variables](#a-thread-safe-queue-using-fine-grained-locks-and-condition-variables)
 
 <!-- markdown-toc end -->
 
@@ -4628,3 +4632,13 @@ int main(int argc, char *argv[])
 ```
 
 因此目前的总结就是：**`const std::shared_ptr<>`和`std::shared_ptr<> const`是等价的，但是`const std::shared_ptr<>`与`const int *`是完全不同的**。
+
+# <2022-04-08 Fri> 《C++ Concurrency in Action》读书笔记（十六）
+
+## Chapter 6: Designing lock-based concurrent data structures（三）
+
+### Lock-based concurrent data structures（三）
+
+#### A thread-safe queue using fine-grained locks and condition variables
+
+三年之后，又重新拾起了这本书，从大概<2022-03-19 Sat>那天开始重头阅读，到今天差不多第二十一天，终于赶上了之前的阅读进度了。

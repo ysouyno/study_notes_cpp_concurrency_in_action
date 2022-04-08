@@ -39,7 +39,7 @@ public:
 
   void push(T new_value)
   {
-    std::unique_ptr<node> p(new node(std::move(head->data)));
+    std::unique_ptr<node> p(new node(std::move(new_value)));
     node *const new_tail = p.get();
     if (tail) {
       tail->next = std::move(p); // 4
@@ -54,5 +54,12 @@ public:
 
 int main(int argc, char *argv[])
 {
+  queue<int> qi;
+  qi.push(3);
+  qi.push(2);
+  qi.push(1);
+  std::shared_ptr<int> val = qi.try_pop();
+  std::cout << "val: " << *val << '\n';
+
   return 0;
 }
