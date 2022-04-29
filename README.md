@@ -120,6 +120,10 @@
     - [Chapter 6: Designing lock-based concurrent data structures（三）](#chapter-6-designing-lock-based-concurrent-data-structures三)
         - [Lock-based concurrent data structures（三）](#lock-based-concurrent-data-structures三)
             - [A thread-safe queue using fine-grained locks and condition variables](#a-thread-safe-queue-using-fine-grained-locks-and-condition-variables)
+- [<2022-04-29 Fri> 《C++ Concurrency in Action》读书笔记（十七）](#2022-04-29-fri-c-concurrency-in-action读书笔记十七)
+    - [Chapter 7: Designing lock-free concurrent data structures（一）](#chapter-7-designing-lock-free-concurrent-data-structures一)
+        - [7.2.1 Writing a thread-safe stack without locks](#721-writing-a-thread-safe-stack-without-locks)
+        - [7.2.2 Stopping those pesky leaks: managing memory in lock-free data structures](#722-stopping-those-pesky-leaks-managing-memory-in-lock-free-data-structures)
 
 <!-- markdown-toc end -->
 
@@ -4642,3 +4646,143 @@ int main(int argc, char *argv[])
 #### A thread-safe queue using fine-grained locks and condition variables
 
 三年之后，又重新拾起了这本书，从大概<2022-03-19 Sat>那天开始重头阅读，到今天差不多第二十一天，终于赶上了之前的阅读进度了。
+
+# <2022-04-29 Fri> 《C++ Concurrency in Action》读书笔记（十七）
+
+## Chapter 7: Designing lock-free concurrent data structures（一）
+
+### 7.2.1 Writing a thread-safe stack without locks
+
+``` c++
+// Listing 7.2
+#include <atomic>
+
+template <typename T> class lock_free_stack {
+private:
+  struct node {
+    T data;
+    node *next;
+
+    node(T const &data_) : data(data_) {}
+  };
+
+  std::atomic<node *> head;
+
+public:
+  void push(T const &data) {
+    node *const new_node = new node(data);
+    new_node->next = head.load();
+    while (!head.compare_exchange_weak(new_node->next, new_node))
+      ;
+  }
+};
+
+int main() {
+  lock_free_stack<int> lfs;
+  lfs.push(1);
+  lfs.push(2);
+  lfs.push(3);
+  return 0;
+}
+```
+
+1. `head`指针其实是`prev`的意思，每`push()`一个元素它都会被修改
+2. 不用每次都去`head.load()`值，因为`compare_exchange_weak()`是位于循环中，编译器帮你完成这个操作
+3. 为什么可以用`weak`版，因为它在循环中测试`false`的情况，同时`weak`比`strong`更具优化性（在某些平台）
+4. `head`每次指向新`push()`的元素，`pop()`时，`head`会被删除（按我的理解方式，`tail`更直观）
+
+### 7.2.2 Stopping those pesky leaks: managing memory in lock-free data structures
+
+``` c++
+// Listing 7.5
+#include <atomic>
+#include <memory>
+#include <iostream>
+
+template <typename T> class lock_free_stack {
+private:
+  struct node {
+    std::shared_ptr<T> data;
+    node *next;
+
+    node(T const &data_) : data(std::make_shared<T>(data_)) {}
+  };
+
+  std::atomic<node *> head;
+  std::atomic<unsigned> threads_in_pop;
+  std::atomic<node *> to_be_deleted;
+
+  static void delete_nodes(node *nodes) {
+    while (nodes) {
+      node *next = nodes->next;
+      delete nodes;
+      nodes = next;
+    }
+  }
+
+  void try_reclaim(node *old_head) {
+    if (threads_in_pop == 1) {
+      node *nodes_to_delete = to_be_deleted.exchange(nullptr);
+      if (!--threads_in_pop) {
+        delete_nodes(nodes_to_delete);
+      } else if (nodes_to_delete) {
+        chain_pending_nodes(nodes_to_delete);
+      }
+      delete old_head;
+    } else {
+      chain_pending_node(old_head);
+      --threads_in_pop;
+    }
+  }
+
+  void chain_pending_nodes(node *nodes) {
+    node *last = nodes;
+    while (node *const next = last->next) {
+      last = next;
+    }
+    chain_pending_nodes(nodes, last);
+  }
+
+  void chain_pending_nodes(node *first, node *last) {
+    last->next = to_be_deleted;
+    while (!to_be_deleted.compare_exchange_weak(last->next, first))
+      ;
+  }
+
+  void chain_pending_node(node *n) { chain_pending_nodes(n, n); }
+
+public:
+  void push(T const &data) {
+    node *const new_node = new node(data);
+    new_node->next = head.load();
+    while (!head.compare_exchange_weak(new_node->next, new_node))
+      ;
+  }
+
+  std::shared_ptr<T> pop() {
+    ++threads_in_pop;
+    node *old_head = head.load();
+    while (old_head && !head.compare_exchange_weak(old_head, old_head->next))
+      ;
+    std::shared_ptr<T> res;
+    if (old_head) {
+      res.swap(old_head->data);
+    }
+    try_reclaim(old_head);
+    return res;
+  }
+};
+
+int main() {
+  lock_free_stack<int> lfs;
+  lfs.push(1);
+  lfs.push(2);
+  lfs.push(3);
+  std::cout << "pop: " << *lfs.pop() << '\n';
+  std::cout << "pop: " << *lfs.pop() << '\n';
+  std::cout << "pop: " << *lfs.pop() << '\n';
+  return 0;
+}
+```
+
+在低负载下工作的较好，但在高负载下可能因为没有窗口期去删除`to_be_deleted`，导致它无限增长而导致内存泄漏，这里这么说是因为要引出`7.2.3`，这里的代码也算好理解。
