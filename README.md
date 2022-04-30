@@ -124,6 +124,9 @@
     - [Chapter 7: Designing lock-free concurrent data structures（一）](#chapter-7-designing-lock-free-concurrent-data-structures一)
         - [7.2.1 Writing a thread-safe stack without locks](#721-writing-a-thread-safe-stack-without-locks)
         - [7.2.2 Stopping those pesky leaks: managing memory in lock-free data structures](#722-stopping-those-pesky-leaks-managing-memory-in-lock-free-data-structures)
+- [<2022-04-29 Fri> 《C++ Concurrency in Action》读书笔记（十七）](#2022-04-29-fri-c-concurrency-in-action读书笔记十七-1)
+    - [Chapter 7: Designing lock-free concurrent data structures（二）](#chapter-7-designing-lock-free-concurrent-data-structures二)
+        - [7.2.3 Detecting nodes that can't be reclaimed using hazard pointers](#723-detecting-nodes-that-cant-be-reclaimed-using-hazard-pointers)
 
 <!-- markdown-toc end -->
 
@@ -4786,3 +4789,202 @@ int main() {
 ```
 
 在低负载下工作的较好，但在高负载下可能因为没有窗口期去删除`to_be_deleted`，导致它无限增长而导致内存泄漏，这里这么说是因为要引出`7.2.3`，这里的代码也算好理解。
+
+# <2022-04-29 Fri> 《C++ Concurrency in Action》读书笔记（十七）
+
+## Chapter 7: Designing lock-free concurrent data structures（二）
+
+### 7.2.3 Detecting nodes that can't be reclaimed using hazard pointers
+
+``` c++
+std::shared_ptr<T> pop() {
+  std::atomic<void *> &hp = get_hazard_pointer_for_current_thread();
+  node *old_head = head.load();
+
+  do {
+    node *temp;
+    do {
+      temp = old_head;
+      hp.store(old_head);
+      old_head = head.load();
+    } while (old_head != temp);
+  } while (old_head &&
+           !head.compare_exchange_strong(old_head, old_head->next));
+
+  hp.store(nullptr);
+  std::shared_ptr<T> res;
+  if (old_head) {
+    res.swap(old_head->data);
+    if (outstanding_hazard_pointers_for(old_head)) {
+      reclaim_later(old_head);
+    } else {
+      delete old_head;
+    }
+    delete_nodes_with_no_hazards();
+  }
+  return res;
+}
+```
+
+1. 最内层的那个`do-while`循环的作用是：一直循环直到将`head`赋值给`hazard pointer`
+2. 接着`CAS`，这个操作完成后将`hazard pointer`清掉，说明你已经拿到了`old_head`，此时的`head`已经变成了`old_head->next`了，说明之后的其它线程无法再获取你获取到的`head`的值了，即`old_head`，这时说明安全了，所以这里要清掉刚才设置的`hazard pointer`，然后你要做的就是看`old_head`有没有被其它线程使用
+3. 为什么这里要用`compare_exchange_strong()`？我的理解是：首先`spurious failure`指的是原始值与期望值相等，而新值没有赋值成功进原始值，返回`false`，如果使用`compare_exchange_weak()`的话，当产生`spurious failure`时返回`false`，`while`循环再次执行，如果此地`head`值被其它线程修改，可能是`push`或者`pop`操作，那么此时原始值与期望值不等，`old_head`会被设置成新的`head`值，即书中所说的`hp`变量被不必要的修改了（`hp`是指向`old_head`的），所以这里用`compare_exchange_strong()`，这里的问题是`hp`并没有`store()`操作，为什么`old_head`被修改会影响`hp`呢？难道也是编译器做了什么操作？
+
+值得注意的是`hazard pointer`不能自由使用，由于`IBM`的专利保护。
+
+``` c++
+#include <atomic>
+#include <memory>
+#include <iostream>
+#include <thread>
+#include <functional>
+
+unsigned const max_hazard_pointers = 100;
+
+struct hazard_pointer {
+  std::atomic<std::thread::id> id;
+  std::atomic<void *> pointer;
+};
+
+hazard_pointer hazard_pointers[max_hazard_pointers];
+
+class hp_owner {
+  hazard_pointer *hp;
+
+public:
+  hp_owner(hp_owner const &) = delete;
+  hp_owner operator=(hp_owner const &) = delete;
+
+  hp_owner() : hp(nullptr) {
+    for (unsigned i = 0; i < max_hazard_pointers; ++i) {
+      std::thread::id old_id;
+      if (hazard_pointers[i].id.compare_exchange_strong(
+              old_id, std::this_thread::get_id())) {
+        hp = &hazard_pointers[i];
+        break;
+      }
+    }
+    if (!hp) {
+      throw std::runtime_error("No hazard pointers available");
+    }
+  }
+
+  std::atomic<void *> &get_pointer() { return hp->pointer; }
+
+  ~hp_owner() {
+    hp->pointer.store(nullptr);
+    hp->id.store(std::thread::id());
+  }
+};
+
+std::atomic<void *> &get_hazard_pointer_for_current_thread() {
+  thread_local static hp_owner hazard;
+  return hazard.get_pointer();
+}
+
+bool outstanding_hazard_pointers_for(void *p) {
+  for (unsigned i = 0; i < max_hazard_pointers; ++i) {
+    if (hazard_pointers[i].pointer.load() == p) {
+      return true;
+    }
+  }
+  return false;
+}
+
+template <typename T> void do_delete(void *p) { delete static_cast<T *>(p); }
+
+struct data_to_reclaim {
+  void *data;
+  std::function<void(void *)> deleter;
+  data_to_reclaim *next;
+
+  template <typename T>
+  data_to_reclaim(T *p) : data(p), deleter(&do_delete<T>), next(0) {}
+
+  ~data_to_reclaim() { deleter(data); }
+};
+
+std::atomic<data_to_reclaim *> nodes_to_reclaim;
+
+void add_to_reclaim_list(data_to_reclaim *node) {
+  node->next = nodes_to_reclaim.load();
+  while (!nodes_to_reclaim.compare_exchange_weak(node->next, node))
+    ;
+}
+
+template <typename T> void reclaim_later(T *data) {
+  add_to_reclaim_list(new data_to_reclaim(data));
+}
+
+void delete_nodes_with_no_hazards() {
+  data_to_reclaim *current = nodes_to_reclaim.exchange(nullptr);
+  while (current) {
+    data_to_reclaim *const next = current->next;
+    if (!outstanding_hazard_pointers_for(current->data)) {
+      delete current;
+    } else {
+      add_to_reclaim_list(current);
+    }
+    current = next;
+  }
+}
+
+template <typename T> class lock_free_stack {
+private:
+  struct node {
+    std::shared_ptr<T> data;
+    node *next;
+
+    node(T const &data_) : data(std::make_shared<T>(data_)) {}
+  };
+
+  std::atomic<node *> head;
+
+public:
+  void push(T const &data) {
+    node *const new_node = new node(data);
+    new_node->next = head.load();
+    while (!head.compare_exchange_weak(new_node->next, new_node))
+      ;
+  }
+
+  std::shared_ptr<T> pop() {
+    std::atomic<void *> &hp = get_hazard_pointer_for_current_thread();
+    node *old_head = head.load();
+
+    do {
+      node *temp;
+      do {
+        temp = old_head;
+        hp.store(old_head);
+        old_head = head.load();
+      } while (old_head != temp);
+    } while (old_head &&
+             !head.compare_exchange_strong(old_head, old_head->next));
+
+    hp.store(nullptr);
+    std::shared_ptr<T> res;
+    if (old_head) {
+      res.swap(old_head->data);
+      if (outstanding_hazard_pointers_for(old_head)) {
+        reclaim_later(old_head);
+      } else {
+        delete old_head;
+      }
+      delete_nodes_with_no_hazards();
+    }
+    return res;
+  }
+};
+
+int main() {
+  lock_free_stack<int> lfs;
+  lfs.push(1);
+  lfs.push(2);
+  lfs.push(3);
+  std::cout << "pop: " << *lfs.pop() << '\n';
+  std::cout << "pop: " << *lfs.pop() << '\n';
+  std::cout << "pop: " << *lfs.pop() << '\n';
+  return 0;
+}
+```
