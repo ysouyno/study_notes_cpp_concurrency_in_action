@@ -130,6 +130,7 @@
 - [<2022-05-02 Mon> 《C++ Concurrency in Action》读书笔记（十八）](#2022-05-02-mon-c-concurrency-in-action读书笔记十八)
     - [Chapter 7: Designing lock-free concurrent data structures（三）](#chapter-7-designing-lock-free-concurrent-data-structures三)
         - [7.2.4 Detecting nodes in use with reference counting](#724-detecting-nodes-in-use-with-reference-counting)
+        - [7.2.6 Writing a thread-safe queue without locks](#726-writing-a-thread-safe-queue-without-locks)
 
 <!-- markdown-toc end -->
 
@@ -5107,4 +5108,74 @@ int main() {
 
   return 0;
 }
+```
+
+### 7.2.6 Writing a thread-safe queue without locks
+
+反复看了`Listing 7.13`的代码两三遍终于回忆起来`queue`的代码结构，要不然`push()`这个函数真看不懂：
+
+1. `queue`内部实现使用了一个`dummy node`，是为了防止`pop()`时队列为空发生错误，这样也不用处理异常和增加`empty()`函数了，看它的构造函数，`head`是申请的`dummy`指针，而`tail`就是`head`，即新创建`queue`时就只有一个元素`dummy node`，`head`和`tail`都指向它
+2. 当`push()`一个元素后，`tail`指向`dummy node`
+
+``` c++
+#include <atomic>
+#include <memory>
+#include <iostream>
+
+template <typename T> class lock_free_queue {
+private:
+  struct node {
+    std::shared_ptr<T> data;
+    node *next;
+
+    node() : next(nullptr) {}
+  };
+
+  std::atomic<node *> head;
+  std::atomic<node *> tail;
+
+  node *pop_head() {
+    node *const old_head = head.load();
+    if (old_head == tail.load()) {
+      return nullptr;
+    }
+    head.store(old_head->next);
+    return old_head;
+  }
+
+public:
+  lock_free_queue() : head(new node), tail(head.load()) {}
+
+  lock_free_queue(const lock_free_queue &) = delete;
+  lock_free_queue &operator=(const lock_free_queue &) = delete;
+
+  ~lock_free_queue() {
+    while (node *const old_head = head.load()) {
+      head.store(old_head->next);
+      delete old_head;
+    }
+  }
+
+  std::shared_ptr<T> pop() {
+    node *old_head = pop_head();
+    if (!old_head) {
+      return std::shared_ptr<T>();
+    }
+
+    std::shared_ptr<T> const res(old_head->data);
+    delete old_head;
+    return res;
+  }
+
+  void push(T new_value) {
+    std::shared_ptr<T> new_data = std::make_shared<T>(std::move(new_value));
+    node &p = new node;
+    node *const old_tail = tail.load();
+    old_tail->data.swap(new_data);
+    old_tail->next = p;
+    tail.store(p);
+  }
+};
+
+int main() {}
 ```
