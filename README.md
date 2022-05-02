@@ -124,9 +124,12 @@
     - [Chapter 7: Designing lock-free concurrent data structures（一）](#chapter-7-designing-lock-free-concurrent-data-structures一)
         - [7.2.1 Writing a thread-safe stack without locks](#721-writing-a-thread-safe-stack-without-locks)
         - [7.2.2 Stopping those pesky leaks: managing memory in lock-free data structures](#722-stopping-those-pesky-leaks-managing-memory-in-lock-free-data-structures)
-- [<2022-04-29 Fri> 《C++ Concurrency in Action》读书笔记（十七）](#2022-04-29-fri-c-concurrency-in-action读书笔记十七-1)
+- [<2022-04-30 Sat> 《C++ Concurrency in Action》读书笔记（十七）](#2022-04-30-sat-c-concurrency-in-action读书笔记十七)
     - [Chapter 7: Designing lock-free concurrent data structures（二）](#chapter-7-designing-lock-free-concurrent-data-structures二)
         - [7.2.3 Detecting nodes that can't be reclaimed using hazard pointers](#723-detecting-nodes-that-cant-be-reclaimed-using-hazard-pointers)
+- [<2022-05-02 Mon> 《C++ Concurrency in Action》读书笔记（十八）](#2022-05-02-mon-c-concurrency-in-action读书笔记十八)
+    - [Chapter 7: Designing lock-free concurrent data structures（三）](#chapter-7-designing-lock-free-concurrent-data-structures三)
+        - [7.2.4 Detecting nodes in use with reference counting](#724-detecting-nodes-in-use-with-reference-counting)
 
 <!-- markdown-toc end -->
 
@@ -4790,7 +4793,7 @@ int main() {
 
 在低负载下工作的较好，但在高负载下可能因为没有窗口期去删除`to_be_deleted`，导致它无限增长而导致内存泄漏，这里这么说是因为要引出`7.2.3`，这里的代码也算好理解。
 
-# <2022-04-29 Fri> 《C++ Concurrency in Action》读书笔记（十七）
+# <2022-04-30 Sat> 《C++ Concurrency in Action》读书笔记（十七）
 
 ## Chapter 7: Designing lock-free concurrent data structures（二）
 
@@ -4985,6 +4988,123 @@ int main() {
   std::cout << "pop: " << *lfs.pop() << '\n';
   std::cout << "pop: " << *lfs.pop() << '\n';
   std::cout << "pop: " << *lfs.pop() << '\n';
+  return 0;
+}
+```
+
+# <2022-05-02 Mon> 《C++ Concurrency in Action》读书笔记（十八）
+
+## Chapter 7: Designing lock-free concurrent data structures（三）
+
+### 7.2.4 Detecting nodes in use with reference counting
+
+五一假期第一天“<2022-04-30 Sat>”那天看了这节的内容，没有看懂，因为完全没有见过双引用计数的用法，一直在心里问为什么指针被读时增加外部引用计数，而读操作结束后减少内部引用计数？现在我觉得答案就是策略。
+
+书中的代码算理解，但似懂非懂：
+
+1. 目前不理解如何选择`weak`和`strong`，代码中`push()`函数用的是`weak`，其它都用`strong`
+2. 可以理解外部计数为什么减`2`，正如所说：因为你从列表中移除了节点，要减`1`；然后你不再将从现在的这个线程再去访问这个节点，再减`1`，怎么理解？因为`pop()`函数结束后，你再调用`pop()`时这个节点你将再也读不到了，因为它已经从列表中删除了。
+3. 可能是因为用了自定义的类型`std::atomic<counted_node_ptr> head;`，产生链接错误，需要加上`-latomic`选项
+
+``` c++
+#include <atomic>
+#include <memory>
+#include <thread>
+#include <iostream>
+
+template <typename T> class lock_free_stack {
+private:
+  struct node;
+
+  struct counted_node_ptr {
+    int external_count;
+    node *ptr;
+  };
+
+  struct node {
+    std::shared_ptr<T> data;
+    std::atomic<int> internal_count;
+    counted_node_ptr next;
+
+    node(T const &data_)
+        : data(std::make_shared<T>(data_)), internal_count(0) {}
+  };
+
+  std::atomic<counted_node_ptr> head;
+
+  void increase_head_count(counted_node_ptr &old_counter) {
+    counted_node_ptr new_counter;
+    do {
+      new_counter = old_counter;
+      ++new_counter.external_count;
+    } while (!head.compare_exchange_strong(old_counter, new_counter));
+    old_counter.external_count = new_counter.external_count;
+  }
+
+public:
+  ~lock_free_stack() {
+    while (pop())
+      ;
+  }
+
+  void push(T const &data) {
+    counted_node_ptr new_node;
+    new_node.ptr = new node(data);
+    new_node.external_count = 1;
+    new_node.ptr->next = head.load();
+    while (!head.compare_exchange_weak(new_node.ptr->next, new_node))
+      ;
+  }
+
+  std::shared_ptr<T> pop() {
+    counted_node_ptr old_head = head.load();
+    for (;;) {
+      increase_head_count(old_head);
+      node *const ptr = old_head.ptr;
+      if (!ptr) {
+        return std::shared_ptr<T>();
+      }
+
+      if (head.compare_exchange_strong(old_head, ptr->next)) {
+        std::shared_ptr<T> res;
+        res.swap(ptr->data);
+
+        int const count_increase = old_head.external_count - 2;
+        if (ptr->internal_count.fetch_add(count_increase) == -count_increase) {
+          delete ptr;
+        }
+
+        return res;
+      } else if (ptr->internal_count.fetch_sub(1) == 1) {
+        delete ptr;
+      }
+    }
+  }
+};
+
+lock_free_stack<int> g_lfs;
+
+void thread_proc(int n) {
+  g_lfs.push(n++);
+  g_lfs.push(n++);
+  g_lfs.push(n++);
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+}
+
+int main() {
+  int n = 0;
+  std::thread thread_arr[4];
+
+  for (int i = 0; i < 4; ++i) {
+    thread_arr[i] = std::thread(thread_proc, n += 10);
+  }
+
+  for (int i = 0; i < 4; ++i) {
+    thread_arr[i].join();
+  }
+
   return 0;
 }
 ```
