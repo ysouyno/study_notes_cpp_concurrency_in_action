@@ -130,7 +130,10 @@
 - [<2022-05-02 Mon> 《C++ Concurrency in Action》读书笔记（十八）](#2022-05-02-mon-c-concurrency-in-action读书笔记十八)
     - [Chapter 7: Designing lock-free concurrent data structures（三）](#chapter-7-designing-lock-free-concurrent-data-structures三)
         - [7.2.4 Detecting nodes in use with reference counting](#724-detecting-nodes-in-use-with-reference-counting)
-        - [7.2.6 Writing a thread-safe queue without locks](#726-writing-a-thread-safe-queue-without-locks)
+        - [7.2.6 Writing a thread-safe queue without locks（一）](#726-writing-a-thread-safe-queue-without-locks一)
+- [<2022-05-03 Tue> 《C++ Concurrency in Action》读书笔记（十八）](#2022-05-03-tue-c-concurrency-in-action读书笔记十八)
+    - [Chapter 7: Designing lock-free concurrent data structures（三）](#chapter-7-designing-lock-free-concurrent-data-structures三-1)
+        - [7.2.6 Writing a thread-safe queue without locks（二）](#726-writing-a-thread-safe-queue-without-locks二)
 
 <!-- markdown-toc end -->
 
@@ -5110,7 +5113,7 @@ int main() {
 }
 ```
 
-### 7.2.6 Writing a thread-safe queue without locks
+### 7.2.6 Writing a thread-safe queue without locks（一）
 
 反复看了`Listing 7.13`的代码两三遍终于回忆起来`queue`的代码结构，要不然`push()`这个函数真看不懂：
 
@@ -5118,6 +5121,7 @@ int main() {
 2. 当`push()`一个元素后，`tail`指向`dummy node`
 
 ``` c++
+// Listing 7.13
 #include <atomic>
 #include <memory>
 #include <iostream>
@@ -5178,4 +5182,183 @@ public:
 };
 
 int main() {}
+```
+
+# <2022-05-03 Tue> 《C++ Concurrency in Action》读书笔记（十八）
+
+## Chapter 7: Designing lock-free concurrent data structures（三）
+
+### 7.2.6 Writing a thread-safe queue without locks（二）
+
+这里有点难懂的！`Listing 7.13`的代码理解了它的解释，对于单个生产者和单个消费者来说运行的很好，但是并发运行`push()`或者`pop()`时，可能多线程时`tail.load()`，`head.load()`会操作同一个节点导致问题发生。
+
+1. `pop()`：你不但要确保只有一个线程`pop`了一个指定的`data`，你还要确保其他线程可以安全的访问他们从`head`节点读取到的`next`成员
+2. `push()`：`push()`和`pop()`之间要有一个`happen-before`的关系，问题是在设置`tail`指针之前，你要设置`dummy node`上的`data`成员，这样的话并发调用`push()`时就会发生多线程重复覆盖`data`的值，因为多线程时你读取的是同一个`tail`
+
+从`Listing 7.15`一直到`Listing 7.19`都是将要实现的`lock_free_queue`的代码，将它们放到一起，运行将会出错`segmentation fault (core dumped)`，因为空指针。附上代码：
+
+``` c++
+// Listing 7.15
+#include <atomic>
+#include <memory>
+#include <thread>
+#include <iostream>
+
+template <typename T> class lock_free_queue {
+private:
+  struct node;
+
+  struct counted_node_ptr {
+    int external_count;
+    node *ptr;
+  };
+
+  std::atomic<counted_node_ptr> head;
+  std::atomic<counted_node_ptr> tail;
+
+  struct node_counter {
+    unsigned internal_count : 30;
+    unsigned external_counters : 2;
+  };
+
+  struct node {
+    std::atomic<T *> data;
+    std::atomic<node_counter> count;
+    counted_node_ptr next;
+
+    node() {
+      node_counter new_count;
+      new_count.internal_count = 0;
+      new_count.external_counters = 2;
+      count.store(new_count);
+
+      next.ptr = nullptr;
+      next.external_count = 0;
+    }
+
+    void release_ref() {
+      node_counter old_counter = count.load(std::memory_order_relaxed);
+      node_counter new_counter;
+
+      do {
+        new_counter = old_counter;
+        --new_counter.internal_count;
+      } while (!count.compare_exchange_strong(old_counter, new_counter,
+                                              std::memory_order_acquire,
+                                              std::memory_order_relaxed));
+
+      if (!new_counter.internal_count && !new_counter.external_counters) {
+        delete this;
+      }
+    }
+  };
+
+  static void increase_external_count(std::atomic<counted_node_ptr> &counter,
+                                      counted_node_ptr &old_counter) {
+    counted_node_ptr new_counter;
+
+    do {
+      new_counter = old_counter;
+      ++new_counter.external_count;
+    } while (!counter.compare_exchange_strong(old_counter, new_counter,
+                                              std::memory_order_acquire,
+                                              std::memory_order_relaxed));
+
+    old_counter.external_count = new_counter.external_count;
+  }
+
+  static void free_external_counter(counted_node_ptr &old_node_ptr) {
+    node *const ptr = old_node_ptr.ptr;
+    int const count_increase = old_node_ptr.external_count - 2;
+    node_counter old_counter = ptr->count.load(std::memory_order_relaxed);
+    node_counter new_counter;
+
+    do {
+      new_counter = old_counter;
+      --new_counter.external_counters;
+      new_counter.internal_count += count_increase;
+    } while (!ptr->count.compare_exchange_strong(old_counter, new_counter,
+                                                 std::memory_order_acquire,
+                                                 std::memory_order_relaxed));
+
+    if (!new_counter.internal_count && !new_counter.external_counters) {
+      delete ptr;
+    }
+  }
+
+public:
+  void push(T new_value) {
+    std::unique_ptr<T> new_data(new T(new_value));
+    counted_node_ptr new_next;
+    new_next.ptr = new node;
+    new_next.external_count = 1;
+    counted_node_ptr old_tail = tail.load();
+
+    for (;;) {
+      increase_external_count(tail, old_tail);
+      T *old_data = nullptr;
+      if (old_tail.ptr->data.compare_exchange_strong(old_data,
+                                                     new_data.get())) {
+        old_tail.ptr->next = new_next;
+        old_tail = tail.exchange(new_next);
+        free_external_counter(old_tail);
+        new_data.release();
+        break;
+      }
+      old_tail.ptr->release_ref();
+    }
+  }
+
+  std::unique_ptr<T> pop() {
+    counted_node_ptr old_head = head.load(std::memory_order_relaxed);
+    for (;;) {
+      increase_external_count(head, old_head);
+      node *const ptr = old_head.ptr;
+      if (ptr == tail.load().ptr) {
+        ptr->release_ref();
+        return std::unique_ptr<T>();
+      }
+
+      if (head.compare_exchange_strong(old_head, ptr->next)) {
+        T *const res = ptr->data.exchange(nullptr);
+        free_external_counter(old_head);
+        return std::unique_ptr<T>(res);
+      }
+      ptr->release_ref();
+    }
+  }
+};
+
+lock_free_queue<int> g_lfs;
+
+void thread_proc(int n) {
+  g_lfs.push(n++);
+  g_lfs.push(n++);
+  g_lfs.push(n++);
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+}
+
+int main() {
+  int n = 0;
+  // std::thread thread_arr[4];
+
+  // for (int i = 0; i < 4; ++i) {
+  //   thread_arr[i] = std::thread(thread_proc, n += 10);
+  // }
+
+  // for (int i = 0; i < 4; ++i) {
+  //   thread_arr[i].join();
+  // }
+
+  g_lfs.push(n++);
+  g_lfs.push(n++);
+  g_lfs.push(n++);
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+  std::cout << "arg n: " << n << ", g_lfs.pop(): " << *g_lfs.pop() << '\n';
+
+  return 0;
+}
 ```
