@@ -136,6 +136,10 @@
         - [7.2.6 Writing a thread-safe queue without locks（二）](#726-writing-a-thread-safe-queue-without-locks二)
         - [7.2.6 Writing a thread-safe queue without locks（三）](#726-writing-a-thread-safe-queue-without-locks三)
             - [MAKING THE QUEUE LOCK-FREE BY HELPING OUT ANOTHER THREAD](#making-the-queue-lock-free-by-helping-out-another-thread)
+- [<2023-06-26 周一> 《C++ Concurrency in Action》读书笔记（十九）](#2023-06-26-周一-c-concurrency-in-action读书笔记十九)
+    - [Chapter 3: Sharing data between threads（一）](#chapter-3-sharing-data-between-threads一)
+        - [3.1 Problems with sharing data between threads](#31-problems-with-sharing-data-between-threads)
+            - [3.1.1 Race conditions](#311-race-conditions)
 
 <!-- markdown-toc end -->
 
@@ -5564,3 +5568,23 @@ int main() {
 ```
 
 连滚带爬把第七章读完了！算阶段性的胜利吧。
+
+# <2023-06-26 周一> 《C++ Concurrency in Action》读书笔记（十九）
+
+## Chapter 3: Sharing data between threads（一）
+
+### 3.1 Problems with sharing data between threads
+
+我觉得翻译成“不变性”更好，“不变量”让我想起`const`关键字。不变性（`invariants`）的理解有点意思：
+
+> One concept that’s widely used to help programmers reason about their code is that of invariants—statements that are always true about a particular data structure, such as “this variable contains the number of items in the list.” These invariants are often broken during an update, especially if the data structure is of any complexity or the update requires modification of more than one value.
+
+就是说比如一个变量表示列表的成员数量，那它就一直表示这个意思，并且它的值是可以变化的。当然用双端列表的例子更方便理解：
+
+>  Consider a doubly linked list, where each node holds a pointer to both the next node in the list and the previous one. One of the invariants is that if you follow a “next” pointer from one node (A) to another (B), the “previous” pointer from that node (B) points back to the first node (A). In order to remove a node from the list, the nodes on either side have to be updated to point to each other. Once one has been updated, the invariant is broken until the node on the other side has been updated too; after the update has completed, the invariant holds again.
+
+#### 3.1.1 Race conditions
+
+通常的`race condition`指的是“有问题的条件竞争”（`a problematic race condition`），`C++`标准为这种“有问题的条件竞争”专门定义了一个专有名词`data race`。
+
+我理解的条件竞争是多个线程修改同一个数据，这个理解看来是不全面的，“有问题的条件竞争”通常是指一个操作需要同时修改两个或者两个以上的独立数据块，因为修改两个数据块必然要用到两条指令。此时另一个线程可能就会有机可乘。
